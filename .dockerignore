@@ -1,0 +1,7 @@
+.git
+bin/
+*.test
+.env
+.env.*
+.DS_Store
+docs/

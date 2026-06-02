@@ -1,0 +1,51 @@
+# Ambiente de desenvolvimento do backend — NÃO precisa de Go instalado na máquina.
+#
+#   docker compose up                      # sobe backend + PostgreSQL + Redis
+#   docker compose run --rm backend go test ./...   # roda os testes unitários
+#
+# O serviço `backend` usa a imagem oficial do Go e monta o código (volume), rodando
+# `go run`. O cache de módulos fica num volume para acelerar execuções seguintes.
+
+services:
+  backend:
+    image: golang:1.25
+    working_dir: /app
+    command: go run ./cmd/server
+    volumes:
+      - ./:/app
+      - go-mod-cache:/go/pkg/mod
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://velarum:velarum@db:5432/velarum?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: velarum
+      POSTGRES_PASSWORD: velarum
+      POSTGRES_DB: velarum
+    ports:
+      - "5433:5432" # host 5433 -> container 5432 (evita conflito com Postgres já rodando na 5432)
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velarum -d velarum"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  go-mod-cache:
+  pg-data:

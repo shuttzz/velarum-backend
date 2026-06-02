@@ -1,0 +1,14 @@
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Env / segredos
+.env
+.env.*
+
+# SO / editor
+.DS_Store
+.idea/
+.vscode/

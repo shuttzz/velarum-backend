@@ -26,6 +26,7 @@ type Querier interface {
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
+	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 	UpsertCityBuilding(ctx context.Context, arg UpsertCityBuildingParams) (CityBuilding, error)

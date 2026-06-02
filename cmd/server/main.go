@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -112,6 +113,20 @@ func main() {
 		writeJSON(w, http.StatusAccepted, bq)
 	})
 
+	mux.HandleFunc("POST /cities/{id}/buildings/{slot}/upgrade", func(w http.ResponseWriter, r *http.Request) {
+		slot, err := strconv.Atoi(r.PathValue("slot"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		bq, err := citySvc.EnqueueUpgrade(r.Context(), r.PathValue("id"), slot, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForBuildErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, bq)
+	})
+
 	srv := &http.Server{Addr: ":8080", Handler: mux}
 	go func() {
 		log.Println("velarum/backend: ouvindo em :8080")
@@ -131,8 +146,11 @@ func statusForBuildErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrBuildingUnknown):
 		return http.StatusBadRequest
+	case errors.Is(err, city.ErrBuildingNotInSlot):
+		return http.StatusNotFound
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
-		errors.Is(err, city.ErrNoFreeSlot), errors.Is(err, city.ErrMaxCopies):
+		errors.Is(err, city.ErrNoFreeSlot), errors.Is(err, city.ErrMaxCopies),
+		errors.Is(err, city.ErrSlotBusy):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError

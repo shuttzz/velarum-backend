@@ -9,3 +9,8 @@ SELECT * FROM build_queue WHERE id = $1 FOR UPDATE;
 -- name: CompleteBuildQueue :execrows
 UPDATE build_queue SET status = 'completed'
 WHERE id = $1 AND status = 'pending';
+
+-- name: ListPendingBuilds :many
+SELECT slot_index, building_type, target_level
+FROM build_queue
+WHERE city_id = $1 AND status = 'pending';

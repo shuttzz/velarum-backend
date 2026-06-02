@@ -84,3 +84,35 @@ func (q *Queries) InsertBuildQueue(ctx context.Context, arg InsertBuildQueuePara
 	)
 	return i, err
 }
+
+const listPendingBuilds = `-- name: ListPendingBuilds :many
+SELECT slot_index, building_type, target_level
+FROM build_queue
+WHERE city_id = $1 AND status = 'pending'
+`
+
+type ListPendingBuildsRow struct {
+	SlotIndex    int16  `json:"slot_index"`
+	BuildingType string `json:"building_type"`
+	TargetLevel  int16  `json:"target_level"`
+}
+
+func (q *Queries) ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error) {
+	rows, err := q.db.Query(ctx, listPendingBuilds, cityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingBuildsRow
+	for rows.Next() {
+		var i ListPendingBuildsRow
+		if err := rows.Scan(&i.SlotIndex, &i.BuildingType, &i.TargetLevel); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

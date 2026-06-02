@@ -11,26 +11,28 @@ import (
 
 	"backend/internal/config"
 	"backend/internal/db"
+	"backend/internal/domain/grid"
 	"backend/internal/domain/resource"
 )
 
 // Erros de negócio da construção (mapeáveis para HTTP 4xx).
 var (
-	ErrBuildingUnknown   = errors.New("edifício desconhecido")
-	ErrPrereqNotMet      = errors.New("pré-requisito não atendido")
-	ErrNoFreeSlot        = errors.New("sem slot livre na cidade")
-	ErrMaxCopies         = errors.New("limite de cópias do edifício atingido")
-	ErrInsufficient      = errors.New("recursos insuficientes")
-	ErrBuildingNotInSlot = errors.New("nenhum edifício neste slot")
-	ErrSlotBusy          = errors.New("já há uma construção em andamento neste slot")
+	ErrBuildingUnknown  = errors.New("edifício desconhecido")
+	ErrPrereqNotMet     = errors.New("pré-requisito não atendido")
+	ErrMaxCopies        = errors.New("limite de cópias do edifício atingido")
+	ErrInsufficient     = errors.New("recursos insuficientes")
+	ErrBadPlacement     = errors.New("posição inválida (fora da grade ou ocupada)")
+	ErrBuildingNotFound = errors.New("edifício não encontrado")
+	ErrBuildingBusy     = errors.New("já há uma construção em andamento neste edifício")
 )
 
 // BuildQueued descreve uma construção/upgrade recém-enfileirado.
 type BuildQueued struct {
 	ID           string    `json:"id"`
 	BuildingType string    `json:"building_type"`
-	SlotIndex    int       `json:"slot_index"`
 	TargetLevel  int       `json:"target_level"`
+	X            int       `json:"x"`
+	Y            int       `json:"y"`
 	FinishAt     time.Time `json:"finish_at"`
 }
 
@@ -41,8 +43,8 @@ type buildCompletePayload struct {
 	BuildQueueID string `json:"build_queue_id"`
 }
 
-// EnqueueConstruct enfileira a construção de um NOVO edifício (nível 1) num slot livre.
-func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType string, now time.Time) (BuildQueued, error) {
+// EnqueueConstruct enfileira a construção de um NOVO edifício (nível 1) na posição (x,y).
+func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType string, x, y int, now time.Time) (BuildQueued, error) {
 	def, ok := config.BuildingByKey(buildingType)
 	if !ok {
 		return BuildQueued{}, ErrBuildingUnknown
@@ -76,18 +78,15 @@ func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType str
 		return BuildQueued{}, err
 	}
 
-	// Slots ocupados = edifícios existentes + construções pendentes (reservados).
-	used := map[int16]bool{}
+	// Limite de cópias (existentes + construções novas pendentes).
 	copies := 0
 	for _, b := range buildings {
-		used[b.SlotIndex] = true
 		if b.BuildingType == def.Key {
 			copies++
 		}
 	}
 	for _, p := range pending {
-		used[p.SlotIndex] = true
-		if p.BuildingType == def.Key {
+		if !p.BuildingID.Valid && p.BuildingType == def.Key {
 			copies++
 		}
 	}
@@ -95,18 +94,15 @@ func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType str
 		return BuildQueued{}, ErrMaxCopies
 	}
 
-	slot := -1
-	for i := 0; i < config.SlotsForEra(int(cityRow.Era)); i++ {
-		if !used[int16(i)] {
-			slot = i
-			break
-		}
-	}
-	if slot < 0 {
-		return BuildQueued{}, ErrNoFreeSlot
+	// Posicionamento na grade.
+	w, h := def.Footprint()
+	gw, gh := config.GridForEra(int(cityRow.Era))
+	rect := grid.Rect{X: x, Y: y, W: w, H: h}
+	if !grid.Fits(rect, gw, gh, occupiedRects(buildings, pending, pgtype.UUID{})) {
+		return BuildQueued{}, ErrBadPlacement
 	}
 
-	bq, err := enqueueBuild(ctx, q, cityRow, slot, def, 1, now)
+	bq, err := enqueueBuild(ctx, q, cityRow, pgtype.UUID{}, def, 1, x, y, now)
 	if err != nil {
 		return BuildQueued{}, err
 	}
@@ -116,9 +112,13 @@ func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType str
 	return toBuildQueued(bq), nil
 }
 
-// EnqueueUpgrade enfileira o upgrade do edifício existente no slot (nível atual + 1).
-func (s *Service) EnqueueUpgrade(ctx context.Context, cityID string, slot int, now time.Time) (BuildQueued, error) {
+// EnqueueUpgrade enfileira o upgrade de um edifício (por id) para o nível atual + 1.
+func (s *Service) EnqueueUpgrade(ctx context.Context, cityID, buildingID string, now time.Time) (BuildQueued, error) {
 	id, err := db.ParseUUID(cityID)
+	if err != nil {
+		return BuildQueued{}, err
+	}
+	bid, err := db.ParseUUID(buildingID)
 	if err != nil {
 		return BuildQueued{}, err
 	}
@@ -143,21 +143,14 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, cityID string, slot int, n
 		return BuildQueued{}, err
 	}
 
-	for _, p := range pending {
-		if int(p.SlotIndex) == slot {
-			return BuildQueued{}, ErrSlotBusy
-		}
-	}
-
-	var current *db.CityBuilding
-	for i := range buildings {
-		if int(buildings[i].SlotIndex) == slot {
-			current = &buildings[i]
-			break
-		}
-	}
+	current := findBuilding(buildings, bid)
 	if current == nil {
-		return BuildQueued{}, ErrBuildingNotInSlot
+		return BuildQueued{}, ErrBuildingNotFound
+	}
+	for _, p := range pending {
+		if sameUUID(p.BuildingID, bid) {
+			return BuildQueued{}, ErrBuildingBusy
+		}
 	}
 	def, ok := config.BuildingByKey(current.BuildingType)
 	if !ok {
@@ -165,7 +158,7 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, cityID string, slot int, n
 	}
 
 	target := int(current.Level) + 1
-	bq, err := enqueueBuild(ctx, q, cityRow, slot, def, target, now)
+	bq, err := enqueueBuild(ctx, q, cityRow, bid, def, target, int(current.PosX), int(current.PosY), now)
 	if err != nil {
 		return BuildQueued{}, err
 	}
@@ -175,47 +168,78 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, cityID string, slot int, n
 	return toBuildQueued(bq), nil
 }
 
-// enqueueBuild faz o gasto de recursos (lazy spend), insere na fila e agenda a conclusão,
-// tudo na transação `q`. Não faz commit (responsabilidade do chamador).
-func enqueueBuild(ctx context.Context, q *db.Queries, cityRow db.City, slot int, def config.BuildingDef, targetLevel int, now time.Time) (db.BuildQueue, error) {
+// MoveBuilding reposiciona um edifício existente (instantâneo) para (x,y), validando a grade.
+func (s *Service) MoveBuilding(ctx context.Context, cityID, buildingID string, x, y int, now time.Time) error {
+	id, err := db.ParseUUID(cityID)
+	if err != nil {
+		return err
+	}
+	bid, err := db.ParseUUID(buildingID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	cityRow, err := q.GetCityForUpdate(ctx, id)
+	if err != nil {
+		return err
+	}
+	buildings, err := q.ListCityBuildings(ctx, id)
+	if err != nil {
+		return err
+	}
+	pending, err := q.ListPendingBuilds(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	current := findBuilding(buildings, bid)
+	if current == nil {
+		return ErrBuildingNotFound
+	}
+
+	w, h := footprintOf(current.BuildingType)
+	gw, gh := config.GridForEra(int(cityRow.Era))
+	rect := grid.Rect{X: x, Y: y, W: w, H: h}
+	if !grid.Fits(rect, gw, gh, occupiedRects(buildings, pending, bid)) {
+		return ErrBadPlacement
+	}
+	if err := q.MoveCityBuilding(ctx, db.MoveCityBuildingParams{ID: bid, PosX: int32(x), PosY: int32(y)}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func enqueueBuild(ctx context.Context, q *db.Queries, cityRow db.City, buildingID pgtype.UUID, def config.BuildingDef, targetLevel, x, y int, now time.Time) (db.BuildQueue, error) {
 	cost := config.CostFor(def.BaseCost, targetLevel)
 	newState, ok := stateFromRow(cityRow).Spend(cost, now)
 	if !ok {
 		return db.BuildQueue{}, ErrInsufficient
 	}
 	if err := q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
-		ID:                 cityRow.ID,
-		MatterStored:       newState.Stored.Matter,
-		EnergyStored:       newState.Stored.Energy,
-		KnowledgeStored:    newState.Stored.Knowledge,
-		MatterRate:         newState.RatePerHour.Matter,
-		EnergyRate:         newState.RatePerHour.Energy,
-		KnowledgeRate:      newState.RatePerHour.Knowledge,
-		ResourcesUpdatedAt: now,
+		ID: cityRow.ID, MatterStored: newState.Stored.Matter, EnergyStored: newState.Stored.Energy, KnowledgeStored: newState.Stored.Knowledge,
+		MatterRate: newState.RatePerHour.Matter, EnergyRate: newState.RatePerHour.Energy, KnowledgeRate: newState.RatePerHour.Knowledge, ResourcesUpdatedAt: now,
 	}); err != nil {
 		return db.BuildQueue{}, err
 	}
 
 	finishAt := now.Add(config.BuildTimeFor(def.BaseTime, targetLevel))
 	bq, err := q.InsertBuildQueue(ctx, db.InsertBuildQueueParams{
-		CityID:       cityRow.ID,
-		SlotIndex:    int16(slot),
-		BuildingType: def.Key,
-		TargetLevel:  int16(targetLevel),
-		StartedAt:    now,
-		FinishAt:     finishAt,
+		CityID: cityRow.ID, BuildingID: buildingID, BuildingType: def.Key, TargetLevel: int16(targetLevel),
+		PosX: int32(x), PosY: int32(y), StartedAt: now, FinishAt: finishAt,
 	})
 	if err != nil {
 		return db.BuildQueue{}, err
 	}
 
-	// Outbox transacional: o evento de conclusão só existe se a fila/gasto forem commitados.
 	payload, _ := json.Marshal(buildCompletePayload{BuildQueueID: db.UUIDString(bq.ID)})
-	if _, err := q.InsertScheduledEvent(ctx, db.InsertScheduledEventParams{
-		Type:    EventBuildComplete,
-		FiresAt: finishAt,
-		Payload: payload,
-	}); err != nil {
+	if _, err := q.InsertScheduledEvent(ctx, db.InsertScheduledEventParams{Type: EventBuildComplete, FiresAt: finishAt, Payload: payload}); err != nil {
 		return db.BuildQueue{}, err
 	}
 	return bq, nil
@@ -223,11 +247,8 @@ func enqueueBuild(ctx context.Context, q *db.Queries, cityRow db.City, slot int,
 
 func toBuildQueued(bq db.BuildQueue) BuildQueued {
 	return BuildQueued{
-		ID:           db.UUIDString(bq.ID),
-		BuildingType: bq.BuildingType,
-		SlotIndex:    int(bq.SlotIndex),
-		TargetLevel:  int(bq.TargetLevel),
-		FinishAt:     bq.FinishAt,
+		ID: db.UUIDString(bq.ID), BuildingType: bq.BuildingType, TargetLevel: int(bq.TargetLevel),
+		X: int(bq.PosX), Y: int(bq.PosY), FinishAt: bq.FinishAt,
 	}
 }
 
@@ -240,8 +261,7 @@ func (s *Service) CompleteBuildEvent(ctx context.Context, payload []byte, now ti
 	return s.CompleteBuild(ctx, p.BuildQueueID, now)
 }
 
-// CompleteBuild aplica uma construção/upgrade concluído: grava o nível no slot e recalcula
-// a produção. Idempotente: se a fila já não estiver pendente, não faz nada.
+// CompleteBuild aplica a construção/upgrade concluído e recalcula a produção. Idempotente.
 func (s *Service) CompleteBuild(ctx context.Context, buildQueueID string, now time.Time) error {
 	bqID, err := db.ParseUUID(buildQueueID)
 	if err != nil {
@@ -263,16 +283,21 @@ func (s *Service) CompleteBuild(ctx context.Context, buildQueueID string, now ti
 		return err
 	}
 	if n == 0 {
-		return tx.Commit(ctx) // já processado por outra execução
+		return tx.Commit(ctx) // já processado
 	}
 
-	if _, err := q.UpsertCityBuilding(ctx, db.UpsertCityBuildingParams{
-		CityID:       item.CityID,
-		SlotIndex:    item.SlotIndex,
-		BuildingType: item.BuildingType,
-		Level:        item.TargetLevel,
-	}); err != nil {
-		return err
+	if item.BuildingID.Valid {
+		// Upgrade: sobe o nível do edifício existente.
+		if err := q.SetCityBuildingLevel(ctx, db.SetCityBuildingLevelParams{ID: item.BuildingID, Level: item.TargetLevel}); err != nil {
+			return err
+		}
+	} else {
+		// Construção: cria o novo edifício na posição reservada.
+		if _, err := q.InsertCityBuilding(ctx, db.InsertCityBuildingParams{
+			CityID: item.CityID, BuildingType: item.BuildingType, Level: item.TargetLevel, PosX: item.PosX, PosY: item.PosY,
+		}); err != nil {
+			return err
+		}
 	}
 
 	if err := recomputeProduction(ctx, q, item.CityID, now); err != nil {
@@ -296,8 +321,6 @@ func checkPrereqs(def config.BuildingDef, buildings []db.CityBuilding) error {
 	return nil
 }
 
-// recomputeProduction soma a produção de todos os edifícios, materializa os recursos
-// acumulados até "now" e grava a nova taxa. Usa lock na cidade.
 func recomputeProduction(ctx context.Context, q *db.Queries, cityID pgtype.UUID, now time.Time) error {
 	cityRow, err := q.GetCityForUpdate(ctx, cityID)
 	if err != nil {
@@ -318,13 +341,41 @@ func recomputeProduction(ctx context.Context, q *db.Queries, cityID pgtype.UUID,
 	}
 	cur := stateFromRow(cityRow).At(now)
 	return q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
-		ID:                 cityID,
-		MatterStored:       cur.Matter,
-		EnergyStored:       cur.Energy,
-		KnowledgeStored:    cur.Knowledge,
-		MatterRate:         rate.Matter,
-		EnergyRate:         rate.Energy,
-		KnowledgeRate:      rate.Knowledge,
-		ResourcesUpdatedAt: now,
+		ID: cityID, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
+		MatterRate: rate.Matter, EnergyRate: rate.Energy, KnowledgeRate: rate.Knowledge, ResourcesUpdatedAt: now,
 	})
+}
+
+func findBuilding(buildings []db.CityBuilding, id pgtype.UUID) *db.CityBuilding {
+	for i := range buildings {
+		if sameUUID(buildings[i].ID, id) {
+			return &buildings[i]
+		}
+	}
+	return nil
+}
+
+func sameUUID(a, b pgtype.UUID) bool {
+	return a.Valid && b.Valid && a.Bytes == b.Bytes
+}
+
+// occupiedRects monta os retângulos ocupados: edifícios existentes + construções NOVAS
+// pendentes (upgrades não mudam de lugar). `exclude` (se válido) é ignorado — útil ao mover.
+func occupiedRects(buildings []db.CityBuilding, pending []db.ListPendingBuildsRow, exclude pgtype.UUID) []grid.Rect {
+	var rects []grid.Rect
+	for _, b := range buildings {
+		if exclude.Valid && sameUUID(b.ID, exclude) {
+			continue
+		}
+		w, h := footprintOf(b.BuildingType)
+		rects = append(rects, grid.Rect{X: int(b.PosX), Y: int(b.PosY), W: w, H: h})
+	}
+	for _, p := range pending {
+		if p.BuildingID.Valid {
+			continue
+		}
+		w, h := footprintOf(p.BuildingType)
+		rects = append(rects, grid.Rect{X: int(p.PosX), Y: int(p.PosY), W: w, H: h})
+	}
+	return rects
 }

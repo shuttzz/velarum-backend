@@ -12,36 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addCityBuilding = `-- name: AddCityBuilding :one
-INSERT INTO city_buildings (city_id, slot_index, building_type, level)
-VALUES ($1, $2, $3, $4)
-RETURNING city_id, slot_index, building_type, level
-`
-
-type AddCityBuildingParams struct {
-	CityID       pgtype.UUID `json:"city_id"`
-	SlotIndex    int16       `json:"slot_index"`
-	BuildingType string      `json:"building_type"`
-	Level        int16       `json:"level"`
-}
-
-func (q *Queries) AddCityBuilding(ctx context.Context, arg AddCityBuildingParams) (CityBuilding, error) {
-	row := q.db.QueryRow(ctx, addCityBuilding,
-		arg.CityID,
-		arg.SlotIndex,
-		arg.BuildingType,
-		arg.Level,
-	)
-	var i CityBuilding
-	err := row.Scan(
-		&i.CityID,
-		&i.SlotIndex,
-		&i.BuildingType,
-		&i.Level,
-	)
-	return i, err
-}
-
 const createCity = `-- name: CreateCity :one
 INSERT INTO cities (
     world_id, player_id, name, coord_x, coord_y, era,
@@ -151,6 +121,24 @@ func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
 	return i, err
 }
 
+const getCityBuildingForUpdate = `-- name: GetCityBuildingForUpdate :one
+SELECT id, city_id, building_type, level, pos_x, pos_y FROM city_buildings WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) (CityBuilding, error) {
+	row := q.db.QueryRow(ctx, getCityBuildingForUpdate, id)
+	var i CityBuilding
+	err := row.Scan(
+		&i.ID,
+		&i.CityID,
+		&i.BuildingType,
+		&i.Level,
+		&i.PosX,
+		&i.PosY,
+	)
+	return i, err
+}
+
 const getCityForUpdate = `-- name: GetCityForUpdate :one
 SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1 FOR UPDATE
 `
@@ -181,8 +169,42 @@ func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, e
 	return i, err
 }
 
+const insertCityBuilding = `-- name: InsertCityBuilding :one
+INSERT INTO city_buildings (city_id, building_type, level, pos_x, pos_y)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, city_id, building_type, level, pos_x, pos_y
+`
+
+type InsertCityBuildingParams struct {
+	CityID       pgtype.UUID `json:"city_id"`
+	BuildingType string      `json:"building_type"`
+	Level        int16       `json:"level"`
+	PosX         int32       `json:"pos_x"`
+	PosY         int32       `json:"pos_y"`
+}
+
+func (q *Queries) InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error) {
+	row := q.db.QueryRow(ctx, insertCityBuilding,
+		arg.CityID,
+		arg.BuildingType,
+		arg.Level,
+		arg.PosX,
+		arg.PosY,
+	)
+	var i CityBuilding
+	err := row.Scan(
+		&i.ID,
+		&i.CityID,
+		&i.BuildingType,
+		&i.Level,
+		&i.PosX,
+		&i.PosY,
+	)
+	return i, err
+}
+
 const listCityBuildings = `-- name: ListCityBuildings :many
-SELECT city_id, slot_index, building_type, level FROM city_buildings WHERE city_id = $1 ORDER BY slot_index
+SELECT id, city_id, building_type, level, pos_x, pos_y FROM city_buildings WHERE city_id = $1 ORDER BY pos_y, pos_x
 `
 
 func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error) {
@@ -195,10 +217,12 @@ func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]
 	for rows.Next() {
 		var i CityBuilding
 		if err := rows.Scan(
+			&i.ID,
 			&i.CityID,
-			&i.SlotIndex,
 			&i.BuildingType,
 			&i.Level,
+			&i.PosX,
+			&i.PosY,
 		); err != nil {
 			return nil, err
 		}
@@ -208,6 +232,35 @@ func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveCityBuilding = `-- name: MoveCityBuilding :exec
+UPDATE city_buildings SET pos_x = $2, pos_y = $3 WHERE id = $1
+`
+
+type MoveCityBuildingParams struct {
+	ID   pgtype.UUID `json:"id"`
+	PosX int32       `json:"pos_x"`
+	PosY int32       `json:"pos_y"`
+}
+
+func (q *Queries) MoveCityBuilding(ctx context.Context, arg MoveCityBuildingParams) error {
+	_, err := q.db.Exec(ctx, moveCityBuilding, arg.ID, arg.PosX, arg.PosY)
+	return err
+}
+
+const setCityBuildingLevel = `-- name: SetCityBuildingLevel :exec
+UPDATE city_buildings SET level = $2 WHERE id = $1
+`
+
+type SetCityBuildingLevelParams struct {
+	ID    pgtype.UUID `json:"id"`
+	Level int16       `json:"level"`
+}
+
+func (q *Queries) SetCityBuildingLevel(ctx context.Context, arg SetCityBuildingLevelParams) error {
+	_, err := q.db.Exec(ctx, setCityBuildingLevel, arg.ID, arg.Level)
+	return err
 }
 
 const updateCityResources = `-- name: UpdateCityResources :exec
@@ -241,36 +294,4 @@ func (q *Queries) UpdateCityResources(ctx context.Context, arg UpdateCityResourc
 		arg.ResourcesUpdatedAt,
 	)
 	return err
-}
-
-const upsertCityBuilding = `-- name: UpsertCityBuilding :one
-INSERT INTO city_buildings (city_id, slot_index, building_type, level)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (city_id, slot_index)
-DO UPDATE SET building_type = EXCLUDED.building_type, level = EXCLUDED.level
-RETURNING city_id, slot_index, building_type, level
-`
-
-type UpsertCityBuildingParams struct {
-	CityID       pgtype.UUID `json:"city_id"`
-	SlotIndex    int16       `json:"slot_index"`
-	BuildingType string      `json:"building_type"`
-	Level        int16       `json:"level"`
-}
-
-func (q *Queries) UpsertCityBuilding(ctx context.Context, arg UpsertCityBuildingParams) (CityBuilding, error) {
-	row := q.db.QueryRow(ctx, upsertCityBuilding,
-		arg.CityID,
-		arg.SlotIndex,
-		arg.BuildingType,
-		arg.Level,
-	)
-	var i CityBuilding
-	err := row.Scan(
-		&i.CityID,
-		&i.SlotIndex,
-		&i.BuildingType,
-		&i.Level,
-	)
-	return i, err
 }

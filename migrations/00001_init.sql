@@ -52,22 +52,26 @@ CREATE TABLE cities (
 );
 CREATE INDEX idx_cities_player ON cities (player_id);
 
--- Edifícios ocupam SLOTS; slots abrem ao avançar de era (nunca por pagamento).
+-- Edifícios na GRADE da cidade: id estável (identidade) + posição (x,y) móvel.
 CREATE TABLE city_buildings (
+    id            UUID PRIMARY KEY DEFAULT uuidv7(),
     city_id       UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
-    slot_index    SMALLINT NOT NULL,
     building_type TEXT NOT NULL,
     level         SMALLINT NOT NULL DEFAULT 1,
-    PRIMARY KEY (city_id, slot_index)
+    pos_x         INTEGER NOT NULL,
+    pos_y         INTEGER NOT NULL
 );
+CREATE INDEX idx_city_buildings_city ON city_buildings (city_id);
 
 -- Fila de construção. finish_at é a verdade temporal (espelhada em scheduled_events).
 CREATE TABLE build_queue (
     id            UUID PRIMARY KEY DEFAULT uuidv7(),
     city_id       UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
-    slot_index    SMALLINT NOT NULL,
+    building_id   UUID,                            -- NULL = construção nova; preenchido = upgrade
     building_type TEXT NOT NULL,
     target_level  SMALLINT NOT NULL,
+    pos_x         INTEGER NOT NULL,
+    pos_y         INTEGER NOT NULL,
     started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     finish_at     TIMESTAMPTZ NOT NULL,
     status        TEXT NOT NULL DEFAULT 'pending', -- pending | completed | cancelled

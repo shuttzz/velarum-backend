@@ -13,9 +13,11 @@ import (
 type BuildQueue struct {
 	ID           pgtype.UUID `json:"id"`
 	CityID       pgtype.UUID `json:"city_id"`
-	SlotIndex    int16       `json:"slot_index"`
+	BuildingID   pgtype.UUID `json:"building_id"`
 	BuildingType string      `json:"building_type"`
 	TargetLevel  int16       `json:"target_level"`
+	PosX         int32       `json:"pos_x"`
+	PosY         int32       `json:"pos_y"`
 	StartedAt    time.Time   `json:"started_at"`
 	FinishAt     time.Time   `json:"finish_at"`
 	Status       string      `json:"status"`
@@ -44,10 +46,12 @@ type City struct {
 }
 
 type CityBuilding struct {
+	ID           pgtype.UUID `json:"id"`
 	CityID       pgtype.UUID `json:"city_id"`
-	SlotIndex    int16       `json:"slot_index"`
 	BuildingType string      `json:"building_type"`
 	Level        int16       `json:"level"`
+	PosX         int32       `json:"pos_x"`
+	PosY         int32       `json:"pos_y"`
 }
 
 type Player struct {

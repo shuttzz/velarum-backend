@@ -79,6 +79,8 @@ type BuildingDef struct {
 	MaxCopies int              // quantas instâncias podem existir na cidade
 	Requires  []Requirement    // dependências para poder construir
 	Era       int
+	Width     int // footprint em células (0 = 1)
+	Height    int // footprint em células (0 = 1)
 }
 
 // Era1Buildings: catálogo de edifícios da Era 1 "Primeiros Fogos".

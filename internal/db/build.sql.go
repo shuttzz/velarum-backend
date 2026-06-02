@@ -26,7 +26,7 @@ func (q *Queries) CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64
 }
 
 const getBuildQueueForUpdate = `-- name: GetBuildQueueForUpdate :one
-SELECT id, city_id, slot_index, building_type, target_level, started_at, finish_at, status, created_at FROM build_queue WHERE id = $1 FOR UPDATE
+SELECT id, city_id, building_id, building_type, target_level, pos_x, pos_y, started_at, finish_at, status, created_at FROM build_queue WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (BuildQueue, error) {
@@ -35,9 +35,11 @@ func (q *Queries) GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (B
 	err := row.Scan(
 		&i.ID,
 		&i.CityID,
-		&i.SlotIndex,
+		&i.BuildingID,
 		&i.BuildingType,
 		&i.TargetLevel,
+		&i.PosX,
+		&i.PosY,
 		&i.StartedAt,
 		&i.FinishAt,
 		&i.Status,
@@ -47,16 +49,18 @@ func (q *Queries) GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (B
 }
 
 const insertBuildQueue = `-- name: InsertBuildQueue :one
-INSERT INTO build_queue (city_id, slot_index, building_type, target_level, started_at, finish_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, city_id, slot_index, building_type, target_level, started_at, finish_at, status, created_at
+INSERT INTO build_queue (city_id, building_id, building_type, target_level, pos_x, pos_y, started_at, finish_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, city_id, building_id, building_type, target_level, pos_x, pos_y, started_at, finish_at, status, created_at
 `
 
 type InsertBuildQueueParams struct {
 	CityID       pgtype.UUID `json:"city_id"`
-	SlotIndex    int16       `json:"slot_index"`
+	BuildingID   pgtype.UUID `json:"building_id"`
 	BuildingType string      `json:"building_type"`
 	TargetLevel  int16       `json:"target_level"`
+	PosX         int32       `json:"pos_x"`
+	PosY         int32       `json:"pos_y"`
 	StartedAt    time.Time   `json:"started_at"`
 	FinishAt     time.Time   `json:"finish_at"`
 }
@@ -64,9 +68,11 @@ type InsertBuildQueueParams struct {
 func (q *Queries) InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error) {
 	row := q.db.QueryRow(ctx, insertBuildQueue,
 		arg.CityID,
-		arg.SlotIndex,
+		arg.BuildingID,
 		arg.BuildingType,
 		arg.TargetLevel,
+		arg.PosX,
+		arg.PosY,
 		arg.StartedAt,
 		arg.FinishAt,
 	)
@@ -74,9 +80,11 @@ func (q *Queries) InsertBuildQueue(ctx context.Context, arg InsertBuildQueuePara
 	err := row.Scan(
 		&i.ID,
 		&i.CityID,
-		&i.SlotIndex,
+		&i.BuildingID,
 		&i.BuildingType,
 		&i.TargetLevel,
+		&i.PosX,
+		&i.PosY,
 		&i.StartedAt,
 		&i.FinishAt,
 		&i.Status,
@@ -86,15 +94,17 @@ func (q *Queries) InsertBuildQueue(ctx context.Context, arg InsertBuildQueuePara
 }
 
 const listPendingBuilds = `-- name: ListPendingBuilds :many
-SELECT slot_index, building_type, target_level
+SELECT building_id, building_type, target_level, pos_x, pos_y
 FROM build_queue
 WHERE city_id = $1 AND status = 'pending'
 `
 
 type ListPendingBuildsRow struct {
-	SlotIndex    int16  `json:"slot_index"`
-	BuildingType string `json:"building_type"`
-	TargetLevel  int16  `json:"target_level"`
+	BuildingID   pgtype.UUID `json:"building_id"`
+	BuildingType string      `json:"building_type"`
+	TargetLevel  int16       `json:"target_level"`
+	PosX         int32       `json:"pos_x"`
+	PosY         int32       `json:"pos_y"`
 }
 
 func (q *Queries) ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error) {
@@ -106,7 +116,13 @@ func (q *Queries) ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]
 	var items []ListPendingBuildsRow
 	for rows.Next() {
 		var i ListPendingBuildsRow
-		if err := rows.Scan(&i.SlotIndex, &i.BuildingType, &i.TargetLevel); err != nil {
+		if err := rows.Scan(
+			&i.BuildingID,
+			&i.BuildingType,
+			&i.TargetLevel,
+			&i.PosX,
+			&i.PosY,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -20,6 +20,30 @@ func SlotsForEra(era int) int {
 	return 0
 }
 
+// Footprint retorna o tamanho do edifício em células (mínimo 1×1).
+func (d BuildingDef) Footprint() (w, h int) {
+	w, h = d.Width, d.Height
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
+// gridByEra: tamanho do grid da cidade (largura, altura) por era. A grade cresce
+// com a era — é a forma espacial de "abrir mais espaço" sem ser paywall.
+var gridByEra = [][2]int{{8, 6}, {10, 8}, {12, 10}, {14, 12}, {16, 14}, {18, 16}, {20, 18}}
+
+// GridForEra retorna as dimensões do grid da cidade numa dada era.
+func GridForEra(era int) (width, height int) {
+	if era >= 1 && era <= len(gridByEra) {
+		return gridByEra[era-1][0], gridByEra[era-1][1]
+	}
+	return gridByEra[0][0], gridByEra[0][1]
+}
+
 // ProductionAt retorna a contribuição de produção/hora de um edifício num dado nível.
 // Edifícios que não produzem recurso retornam zero.
 func (d BuildingDef) ProductionAt(level int) resource.Amounts {

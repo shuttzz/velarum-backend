@@ -1,13 +1,12 @@
 // Comando server: entrypoint do backend do Velarum.
 //
-// Sobe HTTP (jogo + health), conecta no PostgreSQL (migrations no boot) e roda o
-// scheduler de eventos respaldado pelo banco (conclui construções no horário certo).
-//
 // Rotas (o frontend acessa via proxy /api -> backend, que remove o prefixo /api):
 //   GET  /health
-//   POST /games                       -> cria mundo+jogador+cidade inicial
-//   GET  /cities/{id}                 -> estado da cidade (recursos calculados)
-//   POST /cities/{id}/buildings       -> enfileira construção {building_type}
+//   POST /games                                    -> cria mundo+jogador+cidade inicial
+//   GET  /cities/{id}                              -> estado da cidade (recursos + grade)
+//   POST /cities/{id}/buildings                    -> constrói {building_type, x, y}
+//   POST /cities/{id}/buildings/{bid}/upgrade      -> upgrade do edifício {bid}
+//   POST /cities/{id}/buildings/{bid}/move         -> move o edifício {bid} para {x, y}
 package main
 
 import (
@@ -18,7 +17,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -51,8 +49,6 @@ func main() {
 
 	citySvc := city.NewService(pool)
 
-	// Scheduler de eventos futuros respaldado por PostgreSQL (sobrevive a restart:
-	// o loop relê os eventos pendentes do banco).
 	sch := scheduler.New(eventstore.NewPgStore(pool), time.Second)
 	sch.Handle(city.EventBuildComplete, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.CompleteBuildEvent(ctx, e.Payload, time.Now().UTC())
@@ -100,12 +96,14 @@ func main() {
 	mux.HandleFunc("POST /cities/{id}/buildings", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			BuildingType string `json:"building_type"`
+			X            int    `json:"x"`
+			Y            int    `json:"y"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
-		bq, err := citySvc.EnqueueConstruct(r.Context(), r.PathValue("id"), body.BuildingType, time.Now().UTC())
+		bq, err := citySvc.EnqueueConstruct(r.Context(), r.PathValue("id"), body.BuildingType, body.X, body.Y, time.Now().UTC())
 		if err != nil {
 			writeErr(w, statusForBuildErr(err), err)
 			return
@@ -113,18 +111,29 @@ func main() {
 		writeJSON(w, http.StatusAccepted, bq)
 	})
 
-	mux.HandleFunc("POST /cities/{id}/buildings/{slot}/upgrade", func(w http.ResponseWriter, r *http.Request) {
-		slot, err := strconv.Atoi(r.PathValue("slot"))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-		bq, err := citySvc.EnqueueUpgrade(r.Context(), r.PathValue("id"), slot, time.Now().UTC())
+	mux.HandleFunc("POST /cities/{id}/buildings/{bid}/upgrade", func(w http.ResponseWriter, r *http.Request) {
+		bq, err := citySvc.EnqueueUpgrade(r.Context(), r.PathValue("id"), r.PathValue("bid"), time.Now().UTC())
 		if err != nil {
 			writeErr(w, statusForBuildErr(err), err)
 			return
 		}
 		writeJSON(w, http.StatusAccepted, bq)
+	})
+
+	mux.HandleFunc("POST /cities/{id}/buildings/{bid}/move", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := citySvc.MoveBuilding(r.Context(), r.PathValue("id"), r.PathValue("bid"), body.X, body.Y, time.Now().UTC()); err != nil {
+			writeErr(w, statusForBuildErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	srv := &http.Server{Addr: ":8080", Handler: mux}
@@ -146,11 +155,11 @@ func statusForBuildErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrBuildingUnknown):
 		return http.StatusBadRequest
-	case errors.Is(err, city.ErrBuildingNotInSlot):
+	case errors.Is(err, city.ErrBuildingNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
-		errors.Is(err, city.ErrNoFreeSlot), errors.Is(err, city.ErrMaxCopies),
-		errors.Is(err, city.ErrSlotBusy):
+		errors.Is(err, city.ErrMaxCopies), errors.Is(err, city.ErrBadPlacement),
+		errors.Is(err, city.ErrBuildingBusy):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError

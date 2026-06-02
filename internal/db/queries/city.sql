@@ -17,6 +17,9 @@ RETURNING *;
 -- name: GetCity :one
 SELECT * FROM cities WHERE id = $1;
 
+-- name: GetCityForUpdate :one
+SELECT * FROM cities WHERE id = $1 FOR UPDATE;
+
 -- name: UpdateCityResources :exec
 UPDATE cities SET
     matter_stored = $2, energy_stored = $3, knowledge_stored = $4,
@@ -24,20 +27,19 @@ UPDATE cities SET
     resources_updated_at = $8
 WHERE id = $1;
 
--- name: AddCityBuilding :one
-INSERT INTO city_buildings (city_id, slot_index, building_type, level)
-VALUES ($1, $2, $3, $4)
+-- name: InsertCityBuilding :one
+INSERT INTO city_buildings (city_id, building_type, level, pos_x, pos_y)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: ListCityBuildings :many
-SELECT * FROM city_buildings WHERE city_id = $1 ORDER BY slot_index;
+SELECT * FROM city_buildings WHERE city_id = $1 ORDER BY pos_y, pos_x;
 
--- name: GetCityForUpdate :one
-SELECT * FROM cities WHERE id = $1 FOR UPDATE;
+-- name: GetCityBuildingForUpdate :one
+SELECT * FROM city_buildings WHERE id = $1 FOR UPDATE;
 
--- name: UpsertCityBuilding :one
-INSERT INTO city_buildings (city_id, slot_index, building_type, level)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (city_id, slot_index)
-DO UPDATE SET building_type = EXCLUDED.building_type, level = EXCLUDED.level
-RETURNING *;
+-- name: SetCityBuildingLevel :exec
+UPDATE city_buildings SET level = $2 WHERE id = $1;
+
+-- name: MoveCityBuilding :exec
+UPDATE city_buildings SET pos_x = $2, pos_y = $3 WHERE id = $1;

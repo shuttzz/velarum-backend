@@ -10,7 +10,7 @@ import (
 	"backend/internal/pg"
 )
 
-func TestUpgradeFlow_Integration(t *testing.T) {
+func TestUpgradeEMoveFlow_Integration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL não definido — pulando teste de integração")
@@ -36,8 +36,8 @@ func TestUpgradeFlow_Integration(t *testing.T) {
 		t.Fatalf("CreateNewGame: %v", err)
 	}
 
-	// Constrói e conclui um Viveiro de Pedra (slot 1, nível 1, produz 8/h).
-	bq, err := svc.EnqueueConstruct(ctx, c.ID, "viveiro_de_pedra", now)
+	// Constrói e conclui um Viveiro de Pedra em (0,0).
+	bq, err := svc.EnqueueConstruct(ctx, c.ID, "viveiro_de_pedra", 0, 0, now)
 	if err != nil {
 		t.Fatalf("EnqueueConstruct: %v", err)
 	}
@@ -45,8 +45,20 @@ func TestUpgradeFlow_Integration(t *testing.T) {
 		t.Fatalf("CompleteBuild: %v", err)
 	}
 
-	// Upgrade do slot 1 (nível 1 -> 2).
-	up, err := svc.EnqueueUpgrade(ctx, c.ID, 1, bq.FinishAt)
+	// Descobre o id do Viveiro.
+	done, _ := svc.LoadCity(ctx, c.ID, bq.FinishAt)
+	var viveiroID string
+	for _, b := range done.Buildings {
+		if b.Type == "viveiro_de_pedra" {
+			viveiroID = b.ID
+		}
+	}
+	if viveiroID == "" {
+		t.Fatal("não achei o Viveiro")
+	}
+
+	// Upgrade do Viveiro (nível 1 -> 2).
+	up, err := svc.EnqueueUpgrade(ctx, c.ID, viveiroID, bq.FinishAt)
 	if err != nil {
 		t.Fatalf("EnqueueUpgrade: %v", err)
 	}
@@ -54,30 +66,37 @@ func TestUpgradeFlow_Integration(t *testing.T) {
 		t.Fatalf("target level = %d, quero 2", up.TargetLevel)
 	}
 
-	// Slot com upgrade pendente -> ErrSlotBusy.
-	if _, err := svc.EnqueueUpgrade(ctx, c.ID, 1, bq.FinishAt); !errors.Is(err, ErrSlotBusy) {
-		t.Fatalf("esperava ErrSlotBusy, obtive %v", err)
+	// Upgrade pendente no mesmo edifício -> ErrBuildingBusy.
+	if _, err := svc.EnqueueUpgrade(ctx, c.ID, viveiroID, bq.FinishAt); !errors.Is(err, ErrBuildingBusy) {
+		t.Fatalf("esperava ErrBuildingBusy, obtive %v", err)
 	}
-	// Slot vazio -> ErrBuildingNotInSlot.
-	if _, err := svc.EnqueueUpgrade(ctx, c.ID, 5, bq.FinishAt); !errors.Is(err, ErrBuildingNotInSlot) {
-		t.Fatalf("esperava ErrBuildingNotInSlot, obtive %v", err)
+	// Edifício inexistente -> ErrBuildingNotFound.
+	if _, err := svc.EnqueueUpgrade(ctx, c.ID, "01920000-0000-7000-8000-000000000000", bq.FinishAt); !errors.Is(err, ErrBuildingNotFound) {
+		t.Fatalf("esperava ErrBuildingNotFound, obtive %v", err)
 	}
 
 	// Conclui o upgrade: Viveiro nível 2 produz 12/h.
 	if err := svc.CompleteBuild(ctx, up.ID, up.FinishAt); err != nil {
 		t.Fatalf("CompleteBuild (upgrade): %v", err)
 	}
-	done, _ := svc.LoadCity(ctx, c.ID, up.FinishAt)
-	if done.Rate.Matter != 12 {
-		t.Fatalf("produção após upgrade = %v, quero 12", done.Rate.Matter)
+	after, _ := svc.LoadCity(ctx, c.ID, up.FinishAt)
+	if after.Rate.Matter != 12 {
+		t.Fatalf("produção após upgrade = %v, quero 12", after.Rate.Matter)
 	}
-	level := 0
-	for _, b := range done.Buildings {
-		if b.Slot == 1 {
-			level = b.Level
+
+	// Mover o Viveiro de (0,0) para (1,1) — válido.
+	if err := svc.MoveBuilding(ctx, c.ID, viveiroID, 1, 1, up.FinishAt); err != nil {
+		t.Fatalf("MoveBuilding: %v", err)
+	}
+	moved, _ := svc.LoadCity(ctx, c.ID, up.FinishAt)
+	for _, b := range moved.Buildings {
+		if b.ID == viveiroID && (b.X != 1 || b.Y != 1) {
+			t.Fatalf("Viveiro em (%d,%d), quero (1,1)", b.X, b.Y)
 		}
 	}
-	if level != 2 {
-		t.Fatalf("Viveiro slot 1 nível = %d, quero 2", level)
+
+	// Mover para cima do Lar do Clã (centro) -> ErrBadPlacement.
+	if err := svc.MoveBuilding(ctx, c.ID, viveiroID, c.GridW/2, c.GridH/2, up.FinishAt); !errors.Is(err, ErrBadPlacement) {
+		t.Fatalf("esperava ErrBadPlacement, obtive %v", err)
 	}
 }

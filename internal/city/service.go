@@ -1,6 +1,6 @@
-// Package city implementa os casos de uso de cidade (criar jogo, carregar cidade,
-// enfileirar e concluir construções). A lógica temporal de recursos vem de
-// internal/domain/resource (pura). Conversões de UUID ficam em internal/db.
+// Package city implementa os casos de uso de cidade (criar jogo, carregar, construir,
+// concluir, mover edifícios numa grade 2D). A lógica temporal de recursos vem de
+// internal/domain/resource e a de posicionamento de internal/domain/grid (ambas puras).
 package city
 
 import (
@@ -26,7 +26,7 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool, q: db.New(pool)}
 }
 
-// City é a visão de domínio de uma cidade, com os recursos já calculados (lazy eval) em "now".
+// City é a visão de domínio de uma cidade, com recursos calculados (lazy eval) em "now".
 type City struct {
 	ID        string           `json:"id"`
 	PlayerID  string           `json:"player_id"`
@@ -34,18 +34,24 @@ type City struct {
 	Era       int              `json:"era"`
 	CoordX    int              `json:"coord_x"`
 	CoordY    int              `json:"coord_y"`
-	Resources resource.Amounts `json:"resources"` // recursos ATUAIS em now
-	Rate      resource.Amounts `json:"rate"`       // produção por hora
-	Capacity  resource.Amounts `json:"capacity"`   // teto de armazém
+	Resources resource.Amounts `json:"resources"`
+	Rate      resource.Amounts `json:"rate"`
+	Capacity  resource.Amounts `json:"capacity"`
+	GridW     int              `json:"grid_w"`
+	GridH     int              `json:"grid_h"`
 	Buildings []Building        `json:"buildings"`
-	ServerNow time.Time         `json:"server_now"` // referência p/ o cliente extrapolar
+	ServerNow time.Time         `json:"server_now"`
 }
 
-// Building é um edifício da cidade.
+// Building é um edifício posicionado na grade da cidade.
 type Building struct {
-	Slot  int    `json:"slot"`
+	ID    string `json:"id"`
 	Type  string `json:"type"`
 	Level int    `json:"level"`
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	W     int    `json:"w"`
+	H     int    `json:"h"`
 }
 
 // NewGameInput descreve os dados para criar um novo jogo (mundo + jogador + cidade inicial).
@@ -60,14 +66,13 @@ type NewGameInput struct {
 }
 
 // CreateNewGame cria, numa transação, um mundo, um jogador e a cidade inicial (Era 1)
-// com os recursos iniciais da config e o Lar do Clã nível 1.
+// com os recursos iniciais e o Lar do Clã nível 1 no centro da grade.
 func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.Time) (City, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return City{}, fmt.Errorf("begin: %w", err)
 	}
-	defer tx.Rollback(ctx) // no-op após commit bem-sucedido
-
+	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
 
 	world, err := q.CreateWorld(ctx, db.CreateWorldParams{Name: in.WorldName, Speed: 1})
@@ -75,11 +80,7 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 		return City{}, fmt.Errorf("criar mundo: %w", err)
 	}
 	player, err := q.CreatePlayer(ctx, db.CreatePlayerParams{
-		WorldID:      world.ID,
-		Username:     in.Username,
-		Email:        in.Email,
-		PasswordHash: "",
-		Faction:      in.Faction,
+		WorldID: world.ID, Username: in.Username, Email: in.Email, PasswordHash: "", Faction: in.Faction,
 	})
 	if err != nil {
 		return City{}, fmt.Errorf("criar jogador: %w", err)
@@ -88,34 +89,24 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 	start := config.StartingResources
 	capStore := config.StartingStorage
 	row, err := q.CreateCity(ctx, db.CreateCityParams{
-		WorldID:            world.ID,
-		PlayerID:           player.ID,
-		Name:               in.CityName,
-		CoordX:             int32(in.CoordX),
-		CoordY:             int32(in.CoordY),
-		Era:                1,
-		MatterStored:       start.Matter,
-		EnergyStored:       start.Energy,
-		KnowledgeStored:    start.Knowledge,
-		MatterRate:         0, // ainda sem edifícios de produção
-		EnergyRate:         0,
-		KnowledgeRate:      0,
-		MatterCap:          capStore.Matter,
-		EnergyCap:          capStore.Energy,
-		KnowledgeCap:       capStore.Knowledge,
+		WorldID: world.ID, PlayerID: player.ID, Name: in.CityName,
+		CoordX: int32(in.CoordX), CoordY: int32(in.CoordY), Era: 1,
+		MatterStored: start.Matter, EnergyStored: start.Energy, KnowledgeStored: start.Knowledge,
+		MatterRate: 0, EnergyRate: 0, KnowledgeRate: 0,
+		MatterCap: capStore.Matter, EnergyCap: capStore.Energy, KnowledgeCap: capStore.Knowledge,
 		ResourcesUpdatedAt: now,
 	})
 	if err != nil {
 		return City{}, fmt.Errorf("criar cidade: %w", err)
 	}
 
-	// Edifício inicial: Lar do Clã nível 1 no slot 0.
-	if _, err := q.AddCityBuilding(ctx, db.AddCityBuildingParams{
-		CityID:       row.ID,
-		SlotIndex:    0,
-		BuildingType: "lar_do_cla",
-		Level:        1,
-	}); err != nil {
+	// Lar do Clã nível 1 no centro da grade.
+	gw, gh := config.GridForEra(1)
+	larBuilding, err := q.InsertCityBuilding(ctx, db.InsertCityBuildingParams{
+		CityID: row.ID, BuildingType: "lar_do_cla", Level: 1,
+		PosX: int32(gw / 2), PosY: int32(gh / 2),
+	})
+	if err != nil {
 		return City{}, fmt.Errorf("criar edifício inicial: %w", err)
 	}
 
@@ -124,11 +115,11 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 	}
 
 	c := toDomainCity(row, now)
-	c.Buildings = []Building{{Slot: 0, Type: "lar_do_cla", Level: 1}}
+	c.Buildings = []Building{buildingToDomain(larBuilding)}
 	return c, nil
 }
 
-// LoadCity carrega uma cidade (com edifícios) e calcula os recursos atuais (lazy eval) em "now".
+// LoadCity carrega a cidade (com edifícios) e calcula os recursos atuais (lazy eval) em "now".
 func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (City, error) {
 	id, err := db.ParseUUID(cityID)
 	if err != nil {
@@ -144,7 +135,7 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	}
 	c := toDomainCity(row, now)
 	for _, b := range buildings {
-		c.Buildings = append(c.Buildings, Building{Slot: int(b.SlotIndex), Type: b.BuildingType, Level: int(b.Level)})
+		c.Buildings = append(c.Buildings, buildingToDomain(b))
 	}
 	return c, nil
 }
@@ -161,14 +152,8 @@ func (s *Service) SetProduction(ctx context.Context, cityID string, rate resourc
 	}
 	cur := stateFromRow(row).At(now)
 	return s.q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
-		ID:                 id,
-		MatterStored:       cur.Matter,
-		EnergyStored:       cur.Energy,
-		KnowledgeStored:    cur.Knowledge,
-		MatterRate:         rate.Matter,
-		EnergyRate:         rate.Energy,
-		KnowledgeRate:      rate.Knowledge,
-		ResourcesUpdatedAt: now,
+		ID: id, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
+		MatterRate: rate.Matter, EnergyRate: rate.Energy, KnowledgeRate: rate.Knowledge, ResourcesUpdatedAt: now,
 	})
 }
 
@@ -183,16 +168,26 @@ func stateFromRow(c db.City) resource.State {
 
 func toDomainCity(c db.City, now time.Time) City {
 	st := stateFromRow(c)
+	gw, gh := config.GridForEra(int(c.Era))
 	return City{
-		ID:        db.UUIDString(c.ID),
-		PlayerID:  db.UUIDString(c.PlayerID),
-		Name:      c.Name,
-		Era:       int(c.Era),
-		CoordX:    int(c.CoordX),
-		CoordY:    int(c.CoordY),
-		Resources: st.At(now),
-		Rate:      st.RatePerHour,
-		Capacity:  st.Capacity,
-		ServerNow: now,
+		ID: db.UUIDString(c.ID), PlayerID: db.UUIDString(c.PlayerID), Name: c.Name,
+		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
+		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
+		GridW: gw, GridH: gh, ServerNow: now,
 	}
+}
+
+func buildingToDomain(b db.CityBuilding) Building {
+	w, h := footprintOf(b.BuildingType)
+	return Building{
+		ID: db.UUIDString(b.ID), Type: b.BuildingType, Level: int(b.Level),
+		X: int(b.PosX), Y: int(b.PosY), W: w, H: h,
+	}
+}
+
+func footprintOf(buildingType string) (w, h int) {
+	if def, ok := config.BuildingByKey(buildingType); ok {
+		return def.Footprint()
+	}
+	return 1, 1
 }

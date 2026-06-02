@@ -5,3 +5,6 @@ RETURNING *;
 
 -- name: GetWorld :one
 SELECT * FROM worlds WHERE id = $1;
+
+-- name: GetWorldForUpdate :one
+SELECT * FROM worlds WHERE id = $1 FOR UPDATE;

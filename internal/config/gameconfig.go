@@ -18,6 +18,10 @@ const (
 	BuildTimeGrowth  = 1.80 // tempo de construção
 )
 
+// DefaultWorldID é o UUID FIXO do mundo padrão (compartilhado), seedado na migration.
+// Por ora há um único mundo; mais mundos/temporadas virão com matchmaking dedicado.
+const DefaultWorldID = "00000000-0000-7000-8000-000000000001"
+
 // Estado inicial de uma cidade nova.
 var (
 	StartingResources = resource.Amounts{Matter: 200, Energy: 100, Knowledge: 0}

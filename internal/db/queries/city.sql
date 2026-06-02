@@ -20,6 +20,15 @@ SELECT * FROM cities WHERE id = $1;
 -- name: GetCityForUpdate :one
 SELECT * FROM cities WHERE id = $1 FOR UPDATE;
 
+-- name: GetCityByPlayer :one
+SELECT * FROM cities WHERE player_id = $1;
+
+-- name: ListWorldCityCoords :many
+SELECT coord_x, coord_y FROM cities WHERE world_id = $1;
+
+-- name: GetCityAccountID :one
+SELECT p.account_id FROM cities c JOIN players p ON p.id = c.player_id WHERE c.id = $1;
+
 -- name: UpdateCityResources :exec
 UPDATE cities SET
     matter_stored = $2, energy_stored = $3, knowledge_stored = $4,

@@ -13,24 +13,38 @@ import (
 
 type Querier interface {
 	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
+	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateCity(ctx context.Context, arg CreateCityParams) (City, error)
 	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateWorld(ctx context.Context, arg CreateWorldParams) (World, error)
+	DeleteAccountSessions(ctx context.Context, accountID pgtype.UUID) error
+	DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, tokenHash string) error
 	DuePendingEvents(ctx context.Context, firesAt time.Time) ([]ScheduledEvent, error)
+	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
+	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (BuildQueue, error)
 	GetCity(ctx context.Context, id pgtype.UUID) (City, error)
+	GetCityAccountID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) (CityBuilding, error)
+	GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error)
 	GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error)
 	GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
+	GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerByAccountAndWorldParams) (Player, error)
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
+	GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error)
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
+	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	MoveCityBuilding(ctx context.Context, arg MoveCityBuildingParams) error
 	SetCityBuildingLevel(ctx context.Context, arg SetCityBuildingLevelParams) error
+	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 }
 

@@ -5,9 +5,12 @@ package city
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"backend/internal/config"
@@ -66,20 +69,34 @@ type PendingBuild struct {
 	FinishAt     time.Time `json:"finish_at"`
 }
 
-// NewGameInput descreve os dados para criar um novo jogo (mundo + jogador + cidade inicial).
-type NewGameInput struct {
-	WorldName string
-	Username  string
-	Email     string
-	Faction   string
-	CityName  string
-	CoordX    int
-	CoordY    int
-}
+// EnterWorld coloca a conta no mundo padrão (compartilhado): cria seu player e a cidade
+// inicial (Era 1, recursos iniciais + Lar do Clã no centro da grade) caso ainda não existam.
+// É IDEMPOTENTE — se a conta já tem cidade no mundo, retorna a existente. A alocação de
+// coordenada no mapa é serializada por um lock no mundo (FOR UPDATE).
+func (s *Service) EnterWorld(ctx context.Context, accountID, faction, cityName string, now time.Time) (City, error) {
+	accUUID, err := db.ParseUUID(accountID)
+	if err != nil {
+		return City{}, err
+	}
+	worldUUID, err := db.ParseUUID(config.DefaultWorldID)
+	if err != nil {
+		return City{}, err
+	}
 
-// CreateNewGame cria, numa transação, um mundo, um jogador e a cidade inicial (Era 1)
-// com os recursos iniciais e o Lar do Clã nível 1 no centro da grade.
-func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.Time) (City, error) {
+	// Caminho rápido: já tem player no mundo → carrega a cidade existente.
+	if c, ok, err := s.loadExistingCity(ctx, s.q, worldUUID, accUUID, now); err != nil {
+		return City{}, err
+	} else if ok {
+		return c, nil
+	}
+
+	if faction == "" {
+		faction = "aurenthos"
+	}
+	if cityName == "" {
+		cityName = "Capital"
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return City{}, fmt.Errorf("begin: %w", err)
@@ -87,22 +104,45 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
 
-	world, err := q.CreateWorld(ctx, db.CreateWorldParams{Name: in.WorldName, Speed: 1})
+	// Lock no mundo: serializa a alocação de coordenadas entre entradas concorrentes.
+	if _, err := q.GetWorldForUpdate(ctx, worldUUID); err != nil {
+		return City{}, fmt.Errorf("mundo padrão indisponível: %w", err)
+	}
+
+	// Reconfere player (corrida): outra entrada pode ter criado nesse meio-tempo.
+	if c, ok, err := s.loadExistingCity(ctx, q, worldUUID, accUUID, now); err != nil {
+		return City{}, err
+	} else if ok {
+		return c, nil
+	}
+
+	acc, err := q.GetAccountByID(ctx, accUUID)
 	if err != nil {
-		return City{}, fmt.Errorf("criar mundo: %w", err)
+		return City{}, fmt.Errorf("conta inexistente: %w", err)
 	}
 	player, err := q.CreatePlayer(ctx, db.CreatePlayerParams{
-		WorldID: world.ID, Username: in.Username, Email: in.Email, PasswordHash: "", Faction: in.Faction,
+		WorldID: worldUUID, AccountID: accUUID, Username: acc.Username, Faction: faction,
 	})
 	if err != nil {
 		return City{}, fmt.Errorf("criar jogador: %w", err)
 	}
 
+	// Alocar coordenada livre no mapa do mundo (espiral a partir da origem).
+	coords, err := q.ListWorldCityCoords(ctx, worldUUID)
+	if err != nil {
+		return City{}, fmt.Errorf("listar coordenadas: %w", err)
+	}
+	taken := make(map[[2]int]bool, len(coords))
+	for _, c := range coords {
+		taken[[2]int{int(c.CoordX), int(c.CoordY)}] = true
+	}
+	cx, cy := allocateFreeCoord(taken)
+
 	start := config.StartingResources
 	capStore := config.StartingStorage
 	row, err := q.CreateCity(ctx, db.CreateCityParams{
-		WorldID: world.ID, PlayerID: player.ID, Name: in.CityName,
-		CoordX: int32(in.CoordX), CoordY: int32(in.CoordY), Era: 1,
+		WorldID: worldUUID, PlayerID: player.ID, Name: cityName,
+		CoordX: int32(cx), CoordY: int32(cy), Era: 1,
 		MatterStored: start.Matter, EnergyStored: start.Energy, KnowledgeStored: start.Knowledge,
 		MatterRate: 0, EnergyRate: 0, KnowledgeRate: 0,
 		MatterCap: capStore.Matter, EnergyCap: capStore.Energy, KnowledgeCap: capStore.Knowledge,
@@ -129,6 +169,66 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 	c := toDomainCity(row, now)
 	c.Buildings = []Building{buildingToDomain(larBuilding)}
 	return c, nil
+}
+
+// loadExistingCity retorna (cidade, true, nil) se a conta já tem player+cidade no mundo;
+// (zero, false, nil) se ainda não tem; ou (zero, false, err) em falha real.
+func (s *Service) loadExistingCity(ctx context.Context, q *db.Queries, worldUUID, accUUID pgtype.UUID, now time.Time) (City, bool, error) {
+	player, err := q.GetPlayerByAccountAndWorld(ctx, db.GetPlayerByAccountAndWorldParams{
+		WorldID: worldUUID, AccountID: accUUID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return City{}, false, nil
+	}
+	if err != nil {
+		return City{}, false, fmt.Errorf("buscar player: %w", err)
+	}
+	cityRow, err := q.GetCityByPlayer(ctx, player.ID)
+	if err != nil {
+		return City{}, false, fmt.Errorf("buscar cidade: %w", err)
+	}
+	c, err := s.LoadCity(ctx, db.UUIDString(cityRow.ID), now)
+	if err != nil {
+		return City{}, false, err
+	}
+	return c, true, nil
+}
+
+// OwnerAccountID retorna o ID da conta dona da cidade (via player). pgx.ErrNoRows se a
+// cidade não existe.
+func (s *Service) OwnerAccountID(ctx context.Context, cityID string) (string, error) {
+	id, err := db.ParseUUID(cityID)
+	if err != nil {
+		return "", err
+	}
+	acc, err := s.q.GetCityAccountID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return db.UUIDString(acc), nil
+}
+
+// allocateFreeCoord acha a primeira célula livre numa espiral quadrada a partir da origem.
+func allocateFreeCoord(taken map[[2]int]bool) (int, int) {
+	x, y := 0, 0
+	if !taken[[2]int{x, y}] {
+		return x, y
+	}
+	dx, dy := 1, 0
+	segLen := 1
+	for {
+		for s := 0; s < 2; s++ {
+			for k := 0; k < segLen; k++ {
+				x += dx
+				y += dy
+				if !taken[[2]int{x, y}] {
+					return x, y
+				}
+			}
+			dx, dy = -dy, dx // vira 90° à esquerda
+		}
+		segLen++
+	}
 }
 
 // LoadCity carrega a cidade (com edifícios) e calcula os recursos atuais (lazy eval) em "now".

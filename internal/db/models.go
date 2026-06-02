@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Account struct {
+	ID           pgtype.UUID        `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+}
+
 type BuildQueue struct {
 	ID           pgtype.UUID `json:"id"`
 	CityID       pgtype.UUID `json:"city_id"`
@@ -55,15 +64,14 @@ type CityBuilding struct {
 }
 
 type Player struct {
-	ID           pgtype.UUID        `json:"id"`
-	WorldID      pgtype.UUID        `json:"world_id"`
-	Username     string             `json:"username"`
-	Email        string             `json:"email"`
-	PasswordHash string             `json:"password_hash"`
-	Faction      string             `json:"faction"`
-	Era          int16              `json:"era"`
-	LastSeenAt   pgtype.Timestamptz `json:"last_seen_at"`
-	CreatedAt    time.Time          `json:"created_at"`
+	ID         pgtype.UUID        `json:"id"`
+	WorldID    pgtype.UUID        `json:"world_id"`
+	AccountID  pgtype.UUID        `json:"account_id"`
+	Username   string             `json:"username"`
+	Faction    string             `json:"faction"`
+	Era        int16              `json:"era"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	CreatedAt  time.Time          `json:"created_at"`
 }
 
 type ScheduledEvent struct {
@@ -73,6 +81,14 @@ type ScheduledEvent struct {
 	FiresAt   time.Time   `json:"fires_at"`
 	Payload   []byte      `json:"payload"`
 	Status    string      `json:"status"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+type Session struct {
+	ID        pgtype.UUID `json:"id"`
+	AccountID pgtype.UUID `json:"account_id"`
+	TokenHash string      `json:"token_hash"`
+	ExpiresAt time.Time   `json:"expires_at"`
 	CreatedAt time.Time   `json:"created_at"`
 }
 

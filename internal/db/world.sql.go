@@ -55,3 +55,22 @@ func (q *Queries) GetWorld(ctx context.Context, id pgtype.UUID) (World, error) {
 	)
 	return i, err
 }
+
+const getWorldForUpdate = `-- name: GetWorldForUpdate :one
+SELECT id, name, speed, status, started_at, ends_at, created_at FROM worlds WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error) {
+	row := q.db.QueryRow(ctx, getWorldForUpdate, id)
+	var i World
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Speed,
+		&i.Status,
+		&i.StartedAt,
+		&i.EndsAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}

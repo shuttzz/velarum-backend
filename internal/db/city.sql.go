@@ -121,6 +121,17 @@ func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
 	return i, err
 }
 
+const getCityAccountID = `-- name: GetCityAccountID :one
+SELECT p.account_id FROM cities c JOIN players p ON p.id = c.player_id WHERE c.id = $1
+`
+
+func (q *Queries) GetCityAccountID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getCityAccountID, id)
+	var account_id pgtype.UUID
+	err := row.Scan(&account_id)
+	return account_id, err
+}
+
 const getCityBuildingForUpdate = `-- name: GetCityBuildingForUpdate :one
 SELECT id, city_id, building_type, level, pos_x, pos_y FROM city_buildings WHERE id = $1 FOR UPDATE
 `
@@ -135,6 +146,36 @@ func (q *Queries) GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) 
 		&i.Level,
 		&i.PosX,
 		&i.PosY,
+	)
+	return i, err
+}
+
+const getCityByPlayer = `-- name: GetCityByPlayer :one
+SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE player_id = $1
+`
+
+func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error) {
+	row := q.db.QueryRow(ctx, getCityByPlayer, playerID)
+	var i City
+	err := row.Scan(
+		&i.ID,
+		&i.WorldID,
+		&i.PlayerID,
+		&i.Name,
+		&i.CoordX,
+		&i.CoordY,
+		&i.Era,
+		&i.MatterStored,
+		&i.EnergyStored,
+		&i.KnowledgeStored,
+		&i.MatterRate,
+		&i.EnergyRate,
+		&i.KnowledgeRate,
+		&i.MatterCap,
+		&i.EnergyCap,
+		&i.KnowledgeCap,
+		&i.ResourcesUpdatedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -224,6 +265,35 @@ func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]
 			&i.PosX,
 			&i.PosY,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorldCityCoords = `-- name: ListWorldCityCoords :many
+SELECT coord_x, coord_y FROM cities WHERE world_id = $1
+`
+
+type ListWorldCityCoordsRow struct {
+	CoordX int32 `json:"coord_x"`
+	CoordY int32 `json:"coord_y"`
+}
+
+func (q *Queries) ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error) {
+	rows, err := q.db.Query(ctx, listWorldCityCoords, worldID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorldCityCoordsRow
+	for rows.Next() {
+		var i ListWorldCityCoordsRow
+		if err := rows.Scan(&i.CoordX, &i.CoordY); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

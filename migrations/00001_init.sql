@@ -13,18 +13,42 @@ CREATE TABLE worlds (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE players (
+-- Conta GLOBAL do jogador (identidade que persiste entre mundos/temporadas).
+-- Login é por email; username é o nome público. Unicidade case-insensitive via índices.
+CREATE TABLE accounts (
     id            UUID PRIMARY KEY DEFAULT uuidv7(),
-    world_id      UUID NOT NULL REFERENCES worlds(id),
     username      TEXT NOT NULL,
     email         TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    faction       TEXT NOT NULL, -- aurenthos | brevali | sorenthai | kethari | valdruun
-    era           SMALLINT NOT NULL DEFAULT 1,
-    last_seen_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (world_id, username),
-    UNIQUE (world_id, email)
+    last_login_at TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX uq_accounts_email ON accounts (lower(email));
+CREATE UNIQUE INDEX uq_accounts_username ON accounts (lower(username));
+
+-- Sessão server-side. O cookie httpOnly carrega só um token opaco; aqui guardamos o
+-- seu hash (sha256). Permite logout/revogação e "sair de todos os dispositivos".
+CREATE TABLE sessions (
+    id         UUID PRIMARY KEY DEFAULT uuidv7(),
+    account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_sessions_account ON sessions (account_id);
+
+-- Player: o "avatar" da conta DENTRO de um mundo. Uma conta tem no máximo um player por mundo.
+CREATE TABLE players (
+    id           UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id     UUID NOT NULL REFERENCES worlds(id),
+    account_id   UUID NOT NULL REFERENCES accounts(id),
+    username     TEXT NOT NULL,
+    faction      TEXT NOT NULL, -- aurenthos | brevali | sorenthai | kethari | valdruun
+    era          SMALLINT NOT NULL DEFAULT 1,
+    last_seen_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (world_id, account_id),
+    UNIQUE (world_id, username)
 );
 
 -- Cidade única do jogador. Estado de recursos por LAZY EVALUATION:
@@ -92,10 +116,17 @@ CREATE TABLE scheduled_events (
 );
 CREATE INDEX idx_scheduled_events_due ON scheduled_events (fires_at) WHERE status = 'pending';
 
+-- Mundo padrão (compartilhado) com UUID FIXO conhecido — os jogadores entram nele ao se
+-- registrarem/logarem. Mais mundos/temporadas virão depois (matchmaking dedicado).
+INSERT INTO worlds (id, name, speed, status)
+VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
+
 -- +goose Down
 DROP TABLE IF EXISTS scheduled_events;
 DROP TABLE IF EXISTS build_queue;
 DROP TABLE IF EXISTS city_buildings;
 DROP TABLE IF EXISTS cities;
 DROP TABLE IF EXISTS players;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS accounts;
 DROP TABLE IF EXISTS worlds;

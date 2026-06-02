@@ -28,13 +28,7 @@ func TestUpgradeEMoveFlow_Integration(t *testing.T) {
 	svc := NewService(pool)
 	now := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
-	c, err := svc.CreateNewGame(ctx, NewGameInput{
-		WorldName: "Mundo Up", Username: "up", Email: "up@example.com",
-		Faction: "brevali", CityName: "Forja", CoordX: 9, CoordY: 9,
-	}, now)
-	if err != nil {
-		t.Fatalf("CreateNewGame: %v", err)
-	}
+	c := enterTestGame(t, svc, pool, "brevali", now)
 
 	// Constrói e conclui um Viveiro de Pedra em (0,0).
 	bq, err := svc.EnqueueConstruct(ctx, c.ID, "viveiro_de_pedra", 0, 0, now)

@@ -30,19 +30,8 @@ func TestCityLifecycle_Integration(t *testing.T) {
 	svc := NewService(pool)
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Criar novo jogo: mundo + jogador + cidade inicial (Era 1).
-	city, err := svc.CreateNewGame(ctx, NewGameInput{
-		WorldName: "Mundo Teste",
-		Username:  "tester",
-		Email:     "tester@example.com",
-		Faction:   "aurenthos",
-		CityName:  "Capital",
-		CoordX:    0,
-		CoordY:    0,
-	}, now)
-	if err != nil {
-		t.Fatalf("CreateNewGame: %v", err)
-	}
+	// Entrar no mundo: conta + jogador + cidade inicial (Era 1).
+	city := enterTestGame(t, svc, pool, "aurenthos", now)
 	if city.ID == "" {
 		t.Fatal("cidade criada sem id")
 	}

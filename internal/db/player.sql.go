@@ -12,34 +12,31 @@ import (
 )
 
 const createPlayer = `-- name: CreatePlayer :one
-INSERT INTO players (world_id, username, email, password_hash, faction)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, world_id, username, email, password_hash, faction, era, last_seen_at, created_at
+INSERT INTO players (world_id, account_id, username, faction)
+VALUES ($1, $2, $3, $4)
+RETURNING id, world_id, account_id, username, faction, era, last_seen_at, created_at
 `
 
 type CreatePlayerParams struct {
-	WorldID      pgtype.UUID `json:"world_id"`
-	Username     string      `json:"username"`
-	Email        string      `json:"email"`
-	PasswordHash string      `json:"password_hash"`
-	Faction      string      `json:"faction"`
+	WorldID   pgtype.UUID `json:"world_id"`
+	AccountID pgtype.UUID `json:"account_id"`
+	Username  string      `json:"username"`
+	Faction   string      `json:"faction"`
 }
 
 func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error) {
 	row := q.db.QueryRow(ctx, createPlayer,
 		arg.WorldID,
+		arg.AccountID,
 		arg.Username,
-		arg.Email,
-		arg.PasswordHash,
 		arg.Faction,
 	)
 	var i Player
 	err := row.Scan(
 		&i.ID,
 		&i.WorldID,
+		&i.AccountID,
 		&i.Username,
-		&i.Email,
-		&i.PasswordHash,
 		&i.Faction,
 		&i.Era,
 		&i.LastSeenAt,
@@ -49,7 +46,7 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 }
 
 const getPlayer = `-- name: GetPlayer :one
-SELECT id, world_id, username, email, password_hash, faction, era, last_seen_at, created_at FROM players WHERE id = $1
+SELECT id, world_id, account_id, username, faction, era, last_seen_at, created_at FROM players WHERE id = $1
 `
 
 func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error) {
@@ -58,9 +55,33 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 	err := row.Scan(
 		&i.ID,
 		&i.WorldID,
+		&i.AccountID,
 		&i.Username,
-		&i.Email,
-		&i.PasswordHash,
+		&i.Faction,
+		&i.Era,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlayerByAccountAndWorld = `-- name: GetPlayerByAccountAndWorld :one
+SELECT id, world_id, account_id, username, faction, era, last_seen_at, created_at FROM players WHERE world_id = $1 AND account_id = $2
+`
+
+type GetPlayerByAccountAndWorldParams struct {
+	WorldID   pgtype.UUID `json:"world_id"`
+	AccountID pgtype.UUID `json:"account_id"`
+}
+
+func (q *Queries) GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerByAccountAndWorldParams) (Player, error) {
+	row := q.db.QueryRow(ctx, getPlayerByAccountAndWorld, arg.WorldID, arg.AccountID)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.WorldID,
+		&i.AccountID,
+		&i.Username,
 		&i.Faction,
 		&i.Era,
 		&i.LastSeenAt,

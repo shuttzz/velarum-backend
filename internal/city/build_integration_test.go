@@ -28,13 +28,7 @@ func TestBuildFlow_Integration(t *testing.T) {
 	svc := NewService(pool)
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-	c, err := svc.CreateNewGame(ctx, NewGameInput{
-		WorldName: "Mundo Build", Username: "builder", Email: "builder@example.com",
-		Faction: "brevali", CityName: "Forja", CoordX: 5, CoordY: 5,
-	}, now)
-	if err != nil {
-		t.Fatalf("CreateNewGame: %v", err)
-	}
+	c := enterTestGame(t, svc, pool, "brevali", now)
 
 	// Construir um Viveiro de Pedra na célula (0,0). Custo nível 1: Matéria 60, Energia 20.
 	bq, err := svc.EnqueueConstruct(ctx, c.ID, "viveiro_de_pedra", 0, 0, now)

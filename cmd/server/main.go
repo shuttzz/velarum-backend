@@ -12,6 +12,7 @@
 //   POST /cities/{id}/buildings                    -> constrói {building_type, x, y} — só do dono
 //   POST /cities/{id}/buildings/{bid}/upgrade      -> upgrade do edifício {bid} — só do dono
 //   POST /cities/{id}/buildings/{bid}/move         -> move o edifício {bid} para {x, y} — só do dono
+//   POST /cities/{id}/recruit                      -> recruta {unit_type, count} — só do dono
 package main
 
 import (
@@ -60,6 +61,9 @@ func main() {
 	sch := scheduler.New(eventstore.NewPgStore(pool), time.Second)
 	sch.Handle(city.EventBuildComplete, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.CompleteBuildEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventRecruitComplete, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.CompleteRecruitEvent(ctx, e.Payload, time.Now().UTC())
 	})
 	go sch.Run(ctx)
 
@@ -199,6 +203,23 @@ func main() {
 		writeJSON(w, http.StatusAccepted, bq)
 	}))
 
+	mux.HandleFunc("POST /cities/{id}/recruit", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			UnitType string `json:"unit_type"`
+			Count    int    `json:"count"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		rq, err := citySvc.EnqueueRecruit(r.Context(), r.PathValue("id"), body.UnitType, body.Count, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForRecruitErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, rq)
+	}))
+
 	mux.HandleFunc("POST /cities/{id}/buildings/{bid}/move", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			X int `json:"x"`
@@ -239,6 +260,17 @@ func statusForBuildErr(err error) int {
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
 		errors.Is(err, city.ErrMaxCopies), errors.Is(err, city.ErrBadPlacement),
 		errors.Is(err, city.ErrBuildingBusy):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func statusForRecruitErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrNoBarracks), errors.Is(err, city.ErrArmyCapExceeded), errors.Is(err, city.ErrInsufficient):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -304,6 +336,14 @@ func codeFor(err error) string {
 		return "bad_placement"
 	case errors.Is(err, city.ErrBuildingBusy):
 		return "building_busy"
+	case errors.Is(err, city.ErrUnitUnknown):
+		return "unit_unknown"
+	case errors.Is(err, city.ErrBadCount):
+		return "bad_count"
+	case errors.Is(err, city.ErrNoBarracks):
+		return "no_barracks"
+	case errors.Is(err, city.ErrArmyCapExceeded):
+		return "army_cap_exceeded"
 	default:
 		return "internal"
 	}

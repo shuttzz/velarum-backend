@@ -33,11 +33,25 @@ type CatalogGrowth struct {
 	BuildTime  float64 `json:"build_time"`
 }
 
-// CatalogPayload é o corpo do endpoint GET /catalog: todos os edifícios disponíveis
-// (hoje, Era 1) + as constantes de crescimento.
+// CatalogUnit é a forma serializável (JSON) de uma UnitDef, exposta ao cliente.
+type CatalogUnit struct {
+	Key         string           `json:"key"`
+	Name        string           `json:"name"`
+	Category    string           `json:"category"`
+	Attack      int              `json:"attack"`
+	Defense     int              `json:"defense"`
+	HP          int              `json:"hp"`
+	Cost        resource.Amounts `json:"cost"`
+	RecruitTime float64          `json:"recruit_time"`
+	Era         int              `json:"era"`
+}
+
+// CatalogPayload é o corpo do endpoint GET /catalog: todos os edifícios e unidades
+// disponíveis (hoje, Era 1) + as constantes de crescimento.
 type CatalogPayload struct {
 	Growth    CatalogGrowth     `json:"growth"`
 	Buildings []CatalogBuilding `json:"buildings"`
+	Units     []CatalogUnit     `json:"units"`
 }
 
 // Catalog monta o catálogo serializável a partir das definições estáticas (Era 1).
@@ -64,8 +78,16 @@ func Catalog() CatalogPayload {
 			Requires:  reqs,
 		})
 	}
+	units := make([]CatalogUnit, 0, len(Era1Units))
+	for _, u := range Era1Units {
+		units = append(units, CatalogUnit{
+			Key: u.Key, Name: u.Name, Category: u.Category, Attack: u.Attack, Defense: u.Defense,
+			HP: u.HP, Cost: u.Cost, RecruitTime: u.RecruitTime, Era: u.Era,
+		})
+	}
 	return CatalogPayload{
 		Growth:    CatalogGrowth{Production: ProductionGrowth, Cost: CostGrowth, BuildTime: BuildTimeGrowth},
 		Buildings: buildings,
+		Units:     units,
 	}
 }

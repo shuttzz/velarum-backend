@@ -103,6 +103,29 @@ CREATE TABLE build_queue (
 );
 CREATE INDEX idx_build_queue_pending ON build_queue (finish_at) WHERE status = 'pending';
 
+-- Guarnição de tropas da cidade: quantidade por tipo de unidade.
+CREATE TABLE city_troops (
+    id        UUID PRIMARY KEY DEFAULT uuidv7(),
+    city_id   UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    unit_type TEXT NOT NULL,
+    count     INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (city_id, unit_type)
+);
+CREATE INDEX idx_city_troops_city ON city_troops (city_id);
+
+-- Fila de recrutamento. O lote inteiro conclui em finish_at (espelhado em scheduled_events).
+CREATE TABLE recruit_queue (
+    id         UUID PRIMARY KEY DEFAULT uuidv7(),
+    city_id    UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    unit_type  TEXT NOT NULL,
+    count      INTEGER NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finish_at  TIMESTAMPTZ NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'pending', -- pending | completed | cancelled
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_recruit_queue_pending ON recruit_queue (finish_at) WHERE status = 'pending';
+
 -- Fonte de verdade dos eventos futuros agendados (scheduler).
 -- Recarregada no boot -> eventos sobrevivem a restart. Processamento idempotente.
 CREATE TABLE scheduled_events (
@@ -123,6 +146,8 @@ VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
 DROP TABLE IF EXISTS scheduled_events;
+DROP TABLE IF EXISTS recruit_queue;
+DROP TABLE IF EXISTS city_troops;
 DROP TABLE IF EXISTS build_queue;
 DROP TABLE IF EXISTS city_buildings;
 DROP TABLE IF EXISTS cities;

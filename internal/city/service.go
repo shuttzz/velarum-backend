@@ -44,7 +44,16 @@ type City struct {
 	GridH     int              `json:"grid_h"`
 	Buildings []Building        `json:"buildings"`
 	Pending   []PendingBuild   `json:"pending"`
+	Troops    []Troop          `json:"troops"`
+	Recruits  []RecruitQueued  `json:"recruits"`
+	ArmyCap   int              `json:"army_cap"`
 	ServerNow time.Time         `json:"server_now"`
+}
+
+// Troop é a quantidade de uma unidade na guarnição da cidade.
+type Troop struct {
+	UnitType string `json:"unit_type"`
+	Count    int    `json:"count"`
 }
 
 // Building é um edifício posicionado na grade da cidade.
@@ -264,6 +273,27 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 			FinishAt:     p.FinishAt,
 		})
 	}
+
+	// Exército: guarnição + recrutamentos pendentes + teto (nível do Canteiro de Almas).
+	c.ArmyCap = config.ArmyCap(barracksLevel(buildings))
+	troops, err := s.q.ListCityTroops(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, tr := range troops {
+		if tr.Count > 0 {
+			c.Troops = append(c.Troops, Troop{UnitType: tr.UnitType, Count: int(tr.Count)})
+		}
+	}
+	recruits, err := s.q.ListPendingRecruits(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, r := range recruits {
+		c.Recruits = append(c.Recruits, RecruitQueued{
+			ID: db.UUIDString(r.ID), UnitType: r.UnitType, Count: int(r.Count), FinishAt: r.FinishAt,
+		})
+	}
 	return c, nil
 }
 
@@ -300,7 +330,8 @@ func toDomainCity(c db.City, now time.Time) City {
 		ID: db.UUIDString(c.ID), PlayerID: db.UUIDString(c.PlayerID), Name: c.Name,
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
-		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{}, ServerNow: now,
+		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},
+		Troops: []Troop{}, Recruits: []RecruitQueued{}, ServerNow: now,
 	}
 }
 

@@ -63,6 +63,13 @@ type CityBuilding struct {
 	PosY         int32       `json:"pos_y"`
 }
 
+type CityTroop struct {
+	ID       pgtype.UUID `json:"id"`
+	CityID   pgtype.UUID `json:"city_id"`
+	UnitType string      `json:"unit_type"`
+	Count    int32       `json:"count"`
+}
+
 type Player struct {
 	ID         pgtype.UUID        `json:"id"`
 	WorldID    pgtype.UUID        `json:"world_id"`
@@ -72,6 +79,17 @@ type Player struct {
 	Era        int16              `json:"era"`
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
 	CreatedAt  time.Time          `json:"created_at"`
+}
+
+type RecruitQueue struct {
+	ID        pgtype.UUID `json:"id"`
+	CityID    pgtype.UUID `json:"city_id"`
+	UnitType  string      `json:"unit_type"`
+	Count     int32       `json:"count"`
+	StartedAt time.Time   `json:"started_at"`
+	FinishAt  time.Time   `json:"finish_at"`
+	Status    string      `json:"status"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type ScheduledEvent struct {

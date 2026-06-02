@@ -151,6 +151,36 @@ func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
 	return i, err
 }
 
+const getCityForUpdate = `-- name: GetCityForUpdate :one
+SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error) {
+	row := q.db.QueryRow(ctx, getCityForUpdate, id)
+	var i City
+	err := row.Scan(
+		&i.ID,
+		&i.WorldID,
+		&i.PlayerID,
+		&i.Name,
+		&i.CoordX,
+		&i.CoordY,
+		&i.Era,
+		&i.MatterStored,
+		&i.EnergyStored,
+		&i.KnowledgeStored,
+		&i.MatterRate,
+		&i.EnergyRate,
+		&i.KnowledgeRate,
+		&i.MatterCap,
+		&i.EnergyCap,
+		&i.KnowledgeCap,
+		&i.ResourcesUpdatedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listCityBuildings = `-- name: ListCityBuildings :many
 SELECT city_id, slot_index, building_type, level FROM city_buildings WHERE city_id = $1 ORDER BY slot_index
 `
@@ -211,4 +241,36 @@ func (q *Queries) UpdateCityResources(ctx context.Context, arg UpdateCityResourc
 		arg.ResourcesUpdatedAt,
 	)
 	return err
+}
+
+const upsertCityBuilding = `-- name: UpsertCityBuilding :one
+INSERT INTO city_buildings (city_id, slot_index, building_type, level)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (city_id, slot_index)
+DO UPDATE SET building_type = EXCLUDED.building_type, level = EXCLUDED.level
+RETURNING city_id, slot_index, building_type, level
+`
+
+type UpsertCityBuildingParams struct {
+	CityID       pgtype.UUID `json:"city_id"`
+	SlotIndex    int16       `json:"slot_index"`
+	BuildingType string      `json:"building_type"`
+	Level        int16       `json:"level"`
+}
+
+func (q *Queries) UpsertCityBuilding(ctx context.Context, arg UpsertCityBuildingParams) (CityBuilding, error) {
+	row := q.db.QueryRow(ctx, upsertCityBuilding,
+		arg.CityID,
+		arg.SlotIndex,
+		arg.BuildingType,
+		arg.Level,
+	)
+	var i CityBuilding
+	err := row.Scan(
+		&i.CityID,
+		&i.SlotIndex,
+		&i.BuildingType,
+		&i.Level,
+	)
+	return i, err
 }

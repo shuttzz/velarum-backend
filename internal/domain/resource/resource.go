@@ -12,9 +12,9 @@ import "time"
 // Os nomes/visuais mudam por era (Matéria: pedra→aço→liga; Energia: lenha→plasma; etc.),
 // mas a função mecânica é constante.
 type Amounts struct {
-	Matter    float64
-	Energy    float64
-	Knowledge float64
+	Matter    float64 `json:"matter"`
+	Energy    float64 `json:"energy"`
+	Knowledge float64 `json:"knowledge"`
 }
 
 // State é o estado persistido de recursos de uma cidade: o último "snapshot" (Stored),

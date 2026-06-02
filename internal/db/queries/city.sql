@@ -31,3 +31,13 @@ RETURNING *;
 
 -- name: ListCityBuildings :many
 SELECT * FROM city_buildings WHERE city_id = $1 ORDER BY slot_index;
+
+-- name: GetCityForUpdate :one
+SELECT * FROM cities WHERE id = $1 FOR UPDATE;
+
+-- name: UpsertCityBuilding :one
+INSERT INTO city_buildings (city_id, slot_index, building_type, level)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (city_id, slot_index)
+DO UPDATE SET building_type = EXCLUDED.building_type, level = EXCLUDED.level
+RETURNING *;

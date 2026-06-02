@@ -6,20 +6,29 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	AddCityBuilding(ctx context.Context, arg AddCityBuildingParams) (CityBuilding, error)
+	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CreateCity(ctx context.Context, arg CreateCityParams) (City, error)
 	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error)
 	CreateWorld(ctx context.Context, arg CreateWorldParams) (World, error)
+	DuePendingEvents(ctx context.Context, firesAt time.Time) ([]ScheduledEvent, error)
+	GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (BuildQueue, error)
 	GetCity(ctx context.Context, id pgtype.UUID) (City, error)
+	GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error)
 	GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
+	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
+	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
+	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
+	UpsertCityBuilding(ctx context.Context, arg UpsertCityBuildingParams) (CityBuilding, error)
 }
 
 var _ Querier = (*Queries)(nil)

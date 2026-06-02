@@ -1,5 +1,6 @@
 // Package city implementa os casos de uso de cidade (criar jogo, carregar cidade,
-// ligar produção). A lógica temporal de recursos vem de internal/domain/resource (pura).
+// enfileirar e concluir construções). A lógica temporal de recursos vem de
+// internal/domain/resource (pura). Conversões de UUID ficam em internal/db.
 package city
 
 import (
@@ -7,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"backend/internal/config"
@@ -37,6 +37,15 @@ type City struct {
 	Resources resource.Amounts `json:"resources"` // recursos ATUAIS em now
 	Rate      resource.Amounts `json:"rate"`       // produção por hora
 	Capacity  resource.Amounts `json:"capacity"`   // teto de armazém
+	Buildings []Building        `json:"buildings"`
+	ServerNow time.Time         `json:"server_now"` // referência p/ o cliente extrapolar
+}
+
+// Building é um edifício da cidade.
+type Building struct {
+	Slot  int    `json:"slot"`
+	Type  string `json:"type"`
+	Level int    `json:"level"`
 }
 
 // NewGameInput descreve os dados para criar um novo jogo (mundo + jogador + cidade inicial).
@@ -113,12 +122,15 @@ func (s *Service) CreateNewGame(ctx context.Context, in NewGameInput, now time.T
 	if err := tx.Commit(ctx); err != nil {
 		return City{}, fmt.Errorf("commit: %w", err)
 	}
-	return toDomainCity(row, now), nil
+
+	c := toDomainCity(row, now)
+	c.Buildings = []Building{{Slot: 0, Type: "lar_do_cla", Level: 1}}
+	return c, nil
 }
 
-// LoadCity carrega uma cidade e calcula os recursos atuais (lazy eval) em "now".
+// LoadCity carrega uma cidade (com edifícios) e calcula os recursos atuais (lazy eval) em "now".
 func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (City, error) {
-	id, err := parseUUID(cityID)
+	id, err := db.ParseUUID(cityID)
 	if err != nil {
 		return City{}, err
 	}
@@ -126,13 +138,20 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	if err != nil {
 		return City{}, err
 	}
-	return toDomainCity(row, now), nil
+	buildings, err := s.q.ListCityBuildings(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	c := toDomainCity(row, now)
+	for _, b := range buildings {
+		c.Buildings = append(c.Buildings, Building{Slot: int(b.SlotIndex), Type: b.BuildingType, Level: int(b.Level)})
+	}
+	return c, nil
 }
 
 // SetProduction materializa os recursos acumulados até "now" e passa a produzir "rate".
-// É o padrão que a conclusão de um edifício de produção vai usar (1B-2).
 func (s *Service) SetProduction(ctx context.Context, cityID string, rate resource.Amounts, now time.Time) error {
-	id, err := parseUUID(cityID)
+	id, err := db.ParseUUID(cityID)
 	if err != nil {
 		return err
 	}
@@ -165,8 +184,8 @@ func stateFromRow(c db.City) resource.State {
 func toDomainCity(c db.City, now time.Time) City {
 	st := stateFromRow(c)
 	return City{
-		ID:        uuidToString(c.ID),
-		PlayerID:  uuidToString(c.PlayerID),
+		ID:        db.UUIDString(c.ID),
+		PlayerID:  db.UUIDString(c.PlayerID),
 		Name:      c.Name,
 		Era:       int(c.Era),
 		CoordX:    int(c.CoordX),
@@ -174,21 +193,6 @@ func toDomainCity(c db.City, now time.Time) City {
 		Resources: st.At(now),
 		Rate:      st.RatePerHour,
 		Capacity:  st.Capacity,
+		ServerNow: now,
 	}
-}
-
-func parseUUID(s string) (pgtype.UUID, error) {
-	var u pgtype.UUID
-	if err := u.Scan(s); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("uuid inválido %q: %w", s, err)
-	}
-	return u, nil
-}
-
-func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	b := u.Bytes
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

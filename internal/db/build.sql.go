@@ -94,17 +94,20 @@ func (q *Queries) InsertBuildQueue(ctx context.Context, arg InsertBuildQueuePara
 }
 
 const listPendingBuilds = `-- name: ListPendingBuilds :many
-SELECT building_id, building_type, target_level, pos_x, pos_y
+SELECT id, building_id, building_type, target_level, pos_x, pos_y, finish_at
 FROM build_queue
 WHERE city_id = $1 AND status = 'pending'
+ORDER BY finish_at
 `
 
 type ListPendingBuildsRow struct {
+	ID           pgtype.UUID `json:"id"`
 	BuildingID   pgtype.UUID `json:"building_id"`
 	BuildingType string      `json:"building_type"`
 	TargetLevel  int16       `json:"target_level"`
 	PosX         int32       `json:"pos_x"`
 	PosY         int32       `json:"pos_y"`
+	FinishAt     time.Time   `json:"finish_at"`
 }
 
 func (q *Queries) ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error) {
@@ -117,11 +120,13 @@ func (q *Queries) ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]
 	for rows.Next() {
 		var i ListPendingBuildsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.BuildingID,
 			&i.BuildingType,
 			&i.TargetLevel,
 			&i.PosX,
 			&i.PosY,
+			&i.FinishAt,
 		); err != nil {
 			return nil, err
 		}

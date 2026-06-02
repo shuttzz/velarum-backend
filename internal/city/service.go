@@ -40,6 +40,7 @@ type City struct {
 	GridW     int              `json:"grid_w"`
 	GridH     int              `json:"grid_h"`
 	Buildings []Building        `json:"buildings"`
+	Pending   []PendingBuild   `json:"pending"`
 	ServerNow time.Time         `json:"server_now"`
 }
 
@@ -52,6 +53,17 @@ type Building struct {
 	Y     int    `json:"y"`
 	W     int    `json:"w"`
 	H     int    `json:"h"`
+}
+
+// PendingBuild é uma construção (nova) ou upgrade em andamento na fila.
+type PendingBuild struct {
+	ID           string    `json:"id"`
+	BuildingType string    `json:"building_type"`
+	TargetLevel  int       `json:"target_level"`
+	X            int       `json:"x"`
+	Y            int       `json:"y"`
+	IsUpgrade    bool      `json:"is_upgrade"`
+	FinishAt     time.Time `json:"finish_at"`
 }
 
 // NewGameInput descreve os dados para criar um novo jogo (mundo + jogador + cidade inicial).
@@ -133,9 +145,24 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	if err != nil {
 		return City{}, err
 	}
+	pending, err := s.q.ListPendingBuilds(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
 	c := toDomainCity(row, now)
 	for _, b := range buildings {
 		c.Buildings = append(c.Buildings, buildingToDomain(b))
+	}
+	for _, p := range pending {
+		c.Pending = append(c.Pending, PendingBuild{
+			ID:           db.UUIDString(p.ID),
+			BuildingType: p.BuildingType,
+			TargetLevel:  int(p.TargetLevel),
+			X:            int(p.PosX),
+			Y:            int(p.PosY),
+			IsUpgrade:    p.BuildingID.Valid,
+			FinishAt:     p.FinishAt,
+		})
 	}
 	return c, nil
 }
@@ -173,7 +200,7 @@ func toDomainCity(c db.City, now time.Time) City {
 		ID: db.UUIDString(c.ID), PlayerID: db.UUIDString(c.PlayerID), Name: c.Name,
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
-		GridW: gw, GridH: gh, ServerNow: now,
+		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{}, ServerNow: now,
 	}
 }
 

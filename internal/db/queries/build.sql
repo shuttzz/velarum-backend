@@ -11,6 +11,7 @@ UPDATE build_queue SET status = 'completed'
 WHERE id = $1 AND status = 'pending';
 
 -- name: ListPendingBuilds :many
-SELECT building_id, building_type, target_level, pos_x, pos_y
+SELECT id, building_id, building_type, target_level, pos_x, pos_y, finish_at
 FROM build_queue
-WHERE city_id = $1 AND status = 'pending';
+WHERE city_id = $1 AND status = 'pending'
+ORDER BY finish_at;

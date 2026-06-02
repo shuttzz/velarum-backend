@@ -55,6 +55,9 @@ func TestBuildFlow_Integration(t *testing.T) {
 	if afterSpend.Resources.Matter != 140 || afterSpend.Resources.Energy != 80 {
 		t.Fatalf("recursos após gasto: %+v (quero 140/80)", afterSpend.Resources)
 	}
+	if len(afterSpend.Pending) != 1 || afterSpend.Pending[0].BuildingType != "viveiro_de_pedra" || afterSpend.Pending[0].IsUpgrade {
+		t.Fatalf("esperava 1 construção pendente (viveiro, não-upgrade), got %+v", afterSpend.Pending)
+	}
 
 	// Conclui a construção (simula o scheduler no finish_at).
 	if err := svc.CompleteBuild(ctx, bq.ID, bq.FinishAt); err != nil {
@@ -66,6 +69,9 @@ func TestBuildFlow_Integration(t *testing.T) {
 	}
 	if len(done.Buildings) != 2 {
 		t.Fatalf("edifícios = %d, quero 2 (Lar do Clã + Viveiro)", len(done.Buildings))
+	}
+	if len(done.Pending) != 0 {
+		t.Fatalf("pendências deveriam estar vazias após conclusão, got %d", len(done.Pending))
 	}
 
 	// Recursos sobem: 2h após a conclusão, 140 + 8*2 = 156.

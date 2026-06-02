@@ -2,6 +2,7 @@
 //
 // Rotas (o frontend acessa via proxy /api -> backend, que remove o prefixo /api):
 //   GET  /health
+//   GET  /catalog                                  -> catálogo de edifícios (Era 1) + crescimento
 //   POST /games                                    -> cria mundo+jogador+cidade inicial
 //   GET  /cities/{id}                              -> estado da cidade (recursos + grade)
 //   POST /cities/{id}/buildings                    -> constrói {building_type, x, y}
@@ -59,6 +60,10 @@ func main() {
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "velarum-backend"})
+	})
+
+	mux.HandleFunc("GET /catalog", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, config.Catalog())
 	})
 
 	mux.HandleFunc("POST /games", func(w http.ResponseWriter, r *http.Request) {

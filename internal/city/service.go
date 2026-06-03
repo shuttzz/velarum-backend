@@ -48,7 +48,10 @@ type City struct {
 	Recruits  []RecruitQueued  `json:"recruits"`
 	ArmyCap   int              `json:"army_cap"`
 	Marches   []March          `json:"marches"`
-	ServerNow time.Time         `json:"server_now"`
+	// ActiveBattleID é o id da batalha tática em andamento (vazio se nenhuma) — permite
+	// ao frontend retomar/abrir a tela de batalha ao carregar a cidade.
+	ActiveBattleID string    `json:"active_battle_id"`
+	ServerNow      time.Time `json:"server_now"`
 }
 
 // Troop é a quantidade de uma unidade na guarnição da cidade.
@@ -301,6 +304,11 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	}
 	for _, m := range marches {
 		c.Marches = append(c.Marches, marchToDomain(m))
+	}
+	if bat, err := s.q.GetActiveBattle(ctx, id); err == nil {
+		c.ActiveBattleID = db.UUIDString(bat.ID)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return City{}, err
 	}
 	return c, nil
 }

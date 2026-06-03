@@ -29,6 +29,9 @@ type Querier interface {
 	DuePendingEvents(ctx context.Context, firesAt time.Time) ([]ScheduledEvent, error)
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
+	GetActiveBattle(ctx context.Context, cityID pgtype.UUID) (Battle, error)
+	GetBattle(ctx context.Context, id pgtype.UUID) (Battle, error)
+	GetBattleForUpdate(ctx context.Context, id pgtype.UUID) (Battle, error)
 	GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (BuildQueue, error)
 	GetCity(ctx context.Context, id pgtype.UUID) (City, error)
 	GetCityAccountID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
@@ -43,6 +46,7 @@ type Querier interface {
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
 	GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error)
+	InsertBattle(ctx context.Context, arg InsertBattleParams) (Battle, error)
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
 	InsertMarch(ctx context.Context, arg InsertMarchParams) (March, error)
@@ -66,6 +70,7 @@ type Querier interface {
 	SetMarchResult(ctx context.Context, arg SetMarchResultParams) error
 	SetProvinceConquered(ctx context.Context, arg SetProvinceConqueredParams) error
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
+	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 }
 

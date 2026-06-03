@@ -19,6 +19,10 @@
 //   POST /cities/{id}/reports/read                 -> marca todos os relatórios como lidos — só do dono
 //   GET  /cities/{id}/provinces                    -> províncias PvE do jogador (mapa) — só do dono
 //   POST /cities/{id}/march                        -> marcha {province_id, troops} — só do dono
+//   POST /cities/{id}/provinces/{pid}/battle       -> inicia batalha tática contra a província {pid} {troops} — só do dono
+//   GET  /cities/{id}/battles/{bid}                -> estado da batalha tática {bid} — só do dono
+//   POST /cities/{id}/battles/{bid}/act            -> ação na batalha {unit_id, move_to?{q,r}, target_id?} — só do dono
+//   POST /cities/{id}/battles/{bid}/end-turn       -> encerra o turno (roda a IA defensora) — só do dono
 package main
 
 import (
@@ -35,6 +39,7 @@ import (
 	"backend/internal/auth"
 	"backend/internal/city"
 	"backend/internal/config"
+	"backend/internal/domain/battle"
 	"backend/internal/eventstore"
 	"backend/internal/pg"
 	"backend/internal/scheduler"
@@ -276,6 +281,58 @@ func main() {
 		writeJSON(w, http.StatusAccepted, m)
 	}))
 
+	mux.HandleFunc("POST /cities/{id}/provinces/{pid}/battle", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Troops map[string]int `json:"troops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		b, err := citySvc.StartBattle(r.Context(), r.PathValue("id"), r.PathValue("pid"), body.Troops, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForBattleErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, b)
+	}))
+
+	mux.HandleFunc("GET /cities/{id}/battles/{bid}", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		b, err := citySvc.GetBattle(r.Context(), r.PathValue("id"), r.PathValue("bid"))
+		if err != nil {
+			writeErr(w, statusForBattleErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	}))
+
+	mux.HandleFunc("POST /cities/{id}/battles/{bid}/act", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			UnitID   string     `json:"unit_id"`
+			MoveTo   *battle.Hex `json:"move_to"`
+			TargetID string     `json:"target_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		b, err := citySvc.BattleAct(r.Context(), r.PathValue("id"), r.PathValue("bid"), body.UnitID, body.MoveTo, body.TargetID, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForBattleErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	}))
+
+	mux.HandleFunc("POST /cities/{id}/battles/{bid}/end-turn", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		b, err := citySvc.BattleEndTurn(r.Context(), r.PathValue("id"), r.PathValue("bid"), time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForBattleErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, b)
+	}))
+
 	mux.HandleFunc("POST /cities/{id}/recruit", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			UnitType string `json:"unit_type"`
@@ -346,6 +403,20 @@ func statusForMarchErr(err error) int {
 	case errors.Is(err, city.ErrProvinceNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrProvinceConquered), errors.Is(err, city.ErrNoTroops):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func statusForBattleErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrBattleNotFound), errors.Is(err, city.ErrProvinceNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrBattleActive), errors.Is(err, city.ErrProvinceConquered),
+		errors.Is(err, city.ErrNoTroops), errors.Is(err, city.ErrInvalidAction):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -441,6 +512,12 @@ func codeFor(err error) string {
 		return "province_conquered"
 	case errors.Is(err, city.ErrNoTroops):
 		return "no_troops"
+	case errors.Is(err, city.ErrBattleActive):
+		return "battle_active"
+	case errors.Is(err, city.ErrBattleNotFound):
+		return "battle_not_found"
+	case errors.Is(err, city.ErrInvalidAction):
+		return "invalid_action"
 	default:
 		return "internal"
 	}

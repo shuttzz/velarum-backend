@@ -19,6 +19,18 @@ type Account struct {
 	CreatedAt    time.Time          `json:"created_at"`
 }
 
+type Battle struct {
+	ID         pgtype.UUID `json:"id"`
+	WorldID    pgtype.UUID `json:"world_id"`
+	PlayerID   pgtype.UUID `json:"player_id"`
+	CityID     pgtype.UUID `json:"city_id"`
+	ProvinceID pgtype.UUID `json:"province_id"`
+	State      []byte      `json:"state"`
+	Sent       []byte      `json:"sent"`
+	Status     string      `json:"status"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
 type BuildQueue struct {
 	ID           pgtype.UUID `json:"id"`
 	CityID       pgtype.UUID `json:"city_id"`

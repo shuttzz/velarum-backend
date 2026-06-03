@@ -41,6 +41,8 @@ type CatalogUnit struct {
 	Attack          int              `json:"attack"`
 	Defense         int              `json:"defense"`
 	HP              int              `json:"hp"`
+	Move            int              `json:"move"`
+	Range           int              `json:"range"`
 	Cost            resource.Amounts `json:"cost"`
 	RecruitTime     float64          `json:"recruit_time"`
 	MinBarracksLevel int             `json:"min_barracks_level"`
@@ -83,7 +85,7 @@ func Catalog() CatalogPayload {
 	for _, u := range Era1Units {
 		units = append(units, CatalogUnit{
 			Key: u.Key, Name: u.Name, Category: u.Category, Attack: u.Attack, Defense: u.Defense,
-			HP: u.HP, Cost: u.Cost, RecruitTime: u.RecruitTime, MinBarracksLevel: u.MinBarracksLevel, Era: u.Era,
+			HP: u.HP, Move: u.Move, Range: u.Range, Cost: u.Cost, RecruitTime: u.RecruitTime, MinBarracksLevel: u.MinBarracksLevel, Era: u.Era,
 		})
 	}
 	return CatalogPayload{

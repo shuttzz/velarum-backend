@@ -166,6 +166,21 @@ CREATE TABLE marches (
 );
 CREATE INDEX idx_marches_active ON marches (city_id) WHERE status <> 'done';
 
+-- Batalhas táticas (instanciadas): estado completo serializado em JSONB (servidor autoritativo,
+-- determinístico). O jogador joga turnos; o defensor é IA. Cf. GDD §9 e internal/domain/battle.
+CREATE TABLE battles (
+    id          UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id    UUID NOT NULL REFERENCES worlds(id),
+    player_id   UUID NOT NULL REFERENCES players(id),
+    city_id     UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    province_id UUID NOT NULL REFERENCES provinces(id),
+    state       JSONB NOT NULL,
+    sent        JSONB NOT NULL DEFAULT '{}', -- {unit_type: count} enviado (p/ o relatório)
+    status      TEXT NOT NULL DEFAULT 'active', -- active | resolved
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_battles_active ON battles (city_id) WHERE status = 'active';
+
 -- Relatórios/notificações do jogador (caixa de entrada): hoje, relatórios de batalha.
 -- payload JSONB guarda os detalhes específicos por `type`.
 CREATE TABLE reports (
@@ -199,6 +214,7 @@ VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
 DROP TABLE IF EXISTS scheduled_events;
+DROP TABLE IF EXISTS battles;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS marches;
 DROP TABLE IF EXISTS provinces;

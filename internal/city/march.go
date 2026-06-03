@@ -279,6 +279,19 @@ func (s *Service) ResolveArrival(ctx context.Context, marchID string, now time.T
 	if err := q.SetMarchResult(ctx, db.SetMarchResultParams{ID: mid, AttackerWon: &won, Survivors: survJSON, ReturnAt: pgTime(returnAt)}); err != nil {
 		return err
 	}
+
+	// Relatório de batalha (caixa de entrada do jogador).
+	reward := resource.Amounts{}
+	if won {
+		reward = resource.Amounts{Matter: prov.RewardMatter, Energy: prov.RewardEnergy, Knowledge: prov.RewardKnowledge}
+	}
+	brJSON, _ := json.Marshal(battleReport{
+		ProvinceID: db.UUIDString(prov.ID), ProvinceNameKey: prov.NameKey, AttackerWon: won,
+		Sent: troops, Losses: out.Losses, Survivors: out.Survivors, Reward: reward,
+	})
+	if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: prov.WorldID, PlayerID: prov.PlayerID, Type: reportTypeBattle, Payload: brJSON}); err != nil {
+		return err
+	}
 	payload, _ := json.Marshal(marchEventPayload{MarchID: marchID})
 	if _, err := q.InsertScheduledEvent(ctx, db.InsertScheduledEventParams{Type: EventTroopReturn, FiresAt: returnAt, Payload: payload}); err != nil {
 		return err

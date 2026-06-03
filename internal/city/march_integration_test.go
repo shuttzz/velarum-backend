@@ -85,6 +85,22 @@ func TestMarchFlow_Integration(t *testing.T) {
 		t.Fatalf("recompensa não aplicada: matéria = %v, quero %v", loaded.Resources.Matter, wantMatter)
 	}
 
+	// Relatório de batalha gerado (não-lido); marcar como lido funciona.
+	reps, err := svc.ListReports(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("ListReports: %v", err)
+	}
+	if len(reps) != 1 || reps[0].Type != "battle" || reps[0].Read {
+		t.Fatalf("esperava 1 relatório de batalha não-lido, veio %+v", reps)
+	}
+	if err := svc.MarkReportsRead(ctx, c.ID); err != nil {
+		t.Fatalf("MarkReportsRead: %v", err)
+	}
+	reps, _ = svc.ListReports(ctx, c.ID)
+	if !reps[0].Read {
+		t.Fatal("relatório deveria estar lido após MarkReportsRead")
+	}
+
 	// Volta: sobreviventes retornam à guarnição (20 lanceiros sobrevivem ao anel 1).
 	loaded, _ = svc.LoadCity(ctx, c.ID, m.ArriveAt)
 	if loaded.Marches[0].Status != "returning" || loaded.Marches[0].ReturnAt == nil {

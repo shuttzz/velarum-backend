@@ -47,6 +47,7 @@ type Querier interface {
 	InsertMarch(ctx context.Context, arg InsertMarchParams) (March, error)
 	InsertProvince(ctx context.Context, arg InsertProvinceParams) (Province, error)
 	InsertRecruitQueue(ctx context.Context, arg InsertRecruitQueueParams) (RecruitQueue, error)
+	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
 	ListActiveMarches(ctx context.Context, cityID pgtype.UUID) ([]March, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
@@ -54,7 +55,9 @@ type Querier interface {
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
 	ListPlayerProvinces(ctx context.Context, playerID pgtype.UUID) ([]Province, error)
+	ListPlayerReports(ctx context.Context, playerID pgtype.UUID) ([]Report, error)
 	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
+	MarkAllReportsRead(ctx context.Context, playerID pgtype.UUID) error
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	MoveCityBuilding(ctx context.Context, arg MoveCityBuildingParams) error
 	SetCityBuildingLevel(ctx context.Context, arg SetCityBuildingLevelParams) error

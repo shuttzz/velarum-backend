@@ -166,6 +166,19 @@ CREATE TABLE marches (
 );
 CREATE INDEX idx_marches_active ON marches (city_id) WHERE status <> 'done';
 
+-- Relatórios/notificações do jogador (caixa de entrada): hoje, relatórios de batalha.
+-- payload JSONB guarda os detalhes específicos por `type`.
+CREATE TABLE reports (
+    id         UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id   UUID NOT NULL REFERENCES worlds(id),
+    player_id  UUID NOT NULL REFERENCES players(id),
+    type       TEXT NOT NULL, -- battle | ...
+    payload    JSONB NOT NULL DEFAULT '{}',
+    read       BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_reports_player ON reports (player_id, created_at DESC);
+
 -- Fonte de verdade dos eventos futuros agendados (scheduler).
 -- Recarregada no boot -> eventos sobrevivem a restart. Processamento idempotente.
 CREATE TABLE scheduled_events (
@@ -186,6 +199,7 @@ VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
 DROP TABLE IF EXISTS scheduled_events;
+DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS marches;
 DROP TABLE IF EXISTS provinces;
 DROP TABLE IF EXISTS recruit_queue;

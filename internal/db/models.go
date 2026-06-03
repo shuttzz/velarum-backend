@@ -125,6 +125,16 @@ type RecruitQueue struct {
 	CreatedAt time.Time   `json:"created_at"`
 }
 
+type Report struct {
+	ID        pgtype.UUID `json:"id"`
+	WorldID   pgtype.UUID `json:"world_id"`
+	PlayerID  pgtype.UUID `json:"player_id"`
+	Type      string      `json:"type"`
+	Payload   []byte      `json:"payload"`
+	Read      bool        `json:"read"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
 type ScheduledEvent struct {
 	ID        pgtype.UUID `json:"id"`
 	WorldID   pgtype.UUID `json:"world_id"`

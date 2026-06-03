@@ -14,6 +14,8 @@
 //   POST /cities/{id}/buildings/{bid}/move         -> move o edifício {bid} para {x, y} — só do dono
 //   POST /cities/{id}/builds/{bid}/cancel          -> cancela a obra pendente {bid} (devolve 100%) — só do dono
 //   POST /cities/{id}/recruit                      -> recruta {unit_type, count} — só do dono
+//   GET  /cities/{id}/reports                      -> relatórios (caixa de entrada) — só do dono
+//   POST /cities/{id}/reports/read                 -> marca todos os relatórios como lidos — só do dono
 //   GET  /cities/{id}/provinces                    -> províncias PvE do jogador (mapa) — só do dono
 //   POST /cities/{id}/march                        -> marcha {province_id, troops} — só do dono
 package main
@@ -215,6 +217,23 @@ func main() {
 	mux.HandleFunc("POST /cities/{id}/builds/{bid}/cancel", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		if err := citySvc.CancelBuild(r.Context(), r.PathValue("id"), r.PathValue("bid"), time.Now().UTC()); err != nil {
 			writeErr(w, statusForBuildErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	mux.HandleFunc("GET /cities/{id}/reports", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		reps, err := citySvc.ListReports(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, reps)
+	}))
+
+	mux.HandleFunc("POST /cities/{id}/reports/read", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		if err := citySvc.MarkReportsRead(r.Context(), r.PathValue("id")); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -14,6 +14,7 @@ import (
 type Querier interface {
 	AddCityTroops(ctx context.Context, arg AddCityTroopsParams) error
 	CancelBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
+	CancelRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CountPlayerProvinces(ctx context.Context, playerID pgtype.UUID) (int64, error)

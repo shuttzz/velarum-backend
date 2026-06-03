@@ -30,6 +30,19 @@ func (q *Queries) AddCityTroops(ctx context.Context, arg AddCityTroopsParams) er
 	return err
 }
 
+const cancelRecruitQueue = `-- name: CancelRecruitQueue :execrows
+UPDATE recruit_queue SET status = 'cancelled'
+WHERE id = $1 AND status = 'pending'
+`
+
+func (q *Queries) CancelRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelRecruitQueue, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completeRecruitQueue = `-- name: CompleteRecruitQueue :execrows
 UPDATE recruit_queue SET status = 'completed'
 WHERE id = $1 AND status = 'pending'

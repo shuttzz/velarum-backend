@@ -168,6 +168,61 @@ func (s *Service) CompleteRecruit(ctx context.Context, recruitQueueID string, no
 	return tx.Commit(ctx)
 }
 
+// CancelRecruit cancela um recrutamento PENDENTE e devolve 100% do custo. Idempotente-seguro.
+func (s *Service) CancelRecruit(ctx context.Context, cityID, recruitQueueID string, now time.Time) error {
+	id, err := db.ParseUUID(cityID)
+	if err != nil {
+		return err
+	}
+	rqID, err := db.ParseUUID(recruitQueueID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	item, err := q.GetRecruitForUpdate(ctx, rqID)
+	if err != nil {
+		return ErrBuildingNotFound
+	}
+	if !sameUUID(item.CityID, id) {
+		return ErrBuildingNotFound
+	}
+	n, err := q.CancelRecruitQueue(ctx, rqID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotCancelable
+	}
+
+	def, ok := config.UnitByKey(item.UnitType)
+	if !ok {
+		return ErrUnitUnknown
+	}
+	c := float64(item.Count)
+	cityRow, err := q.GetCityForUpdate(ctx, id)
+	if err != nil {
+		return err
+	}
+	cur := stateFromRow(cityRow).At(now)
+	cur.Matter += def.Cost.Matter * c
+	cur.Energy += def.Cost.Energy * c
+	cur.Knowledge += def.Cost.Knowledge * c
+	if err := q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
+		ID: id, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
+		MatterRate: cityRow.MatterRate, EnergyRate: cityRow.EnergyRate, KnowledgeRate: cityRow.KnowledgeRate, ResourcesUpdatedAt: now,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // barracksLevel retorna o maior nível do Canteiro de Almas entre os edifícios (0 se não há).
 func barracksLevel(buildings []db.CityBuilding) int {
 	lvl := 0

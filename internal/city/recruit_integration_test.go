@@ -86,3 +86,55 @@ func TestRecruitFlow_Integration(t *testing.T) {
 		t.Fatalf("esperava ErrArmyCapExceeded, veio %v", err)
 	}
 }
+
+func TestCancelRecruit_Integration(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL não definido — pulando teste de integração")
+	}
+	if err := pg.Migrate(url); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pg.Connect(ctx, url)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer pool.Close()
+
+	svc := NewService(pool)
+	now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	c := enterTestGame(t, svc, pool, "aurenthos", now) // 500/500/200
+
+	cityUUID, _ := db.ParseUUID(c.ID)
+	if _, err := db.New(pool).InsertCityBuilding(ctx, db.InsertCityBuildingParams{
+		CityID: cityUUID, BuildingType: config.BarracksKey, Level: 1, PosX: 0, PosY: 0,
+	}); err != nil {
+		t.Fatalf("InsertCityBuilding: %v", err)
+	}
+
+	// Recruta 5 lanceiros (custo 100/50) → 400/450.
+	rq, err := svc.EnqueueRecruit(ctx, c.ID, "lanceiro", 5, now)
+	if err != nil {
+		t.Fatalf("EnqueueRecruit: %v", err)
+	}
+	after, _ := svc.LoadCity(ctx, c.ID, now)
+	if after.Resources.Matter != 400 || after.Resources.Energy != 450 {
+		t.Fatalf("após recrutar: %+v (quero 400/450)", after.Resources)
+	}
+
+	// Cancela → devolução total (500/500) e fila de recrutamento vazia.
+	if err := svc.CancelRecruit(ctx, c.ID, rq.ID, now); err != nil {
+		t.Fatalf("CancelRecruit: %v", err)
+	}
+	refunded, _ := svc.LoadCity(ctx, c.ID, now)
+	if refunded.Resources.Matter != 500 || refunded.Resources.Energy != 500 {
+		t.Fatalf("devolução falhou: %+v (quero 500/500)", refunded.Resources)
+	}
+	if len(refunded.Recruits) != 0 {
+		t.Fatalf("fila de recrutamento deveria estar vazia, got %d", len(refunded.Recruits))
+	}
+	if err := svc.CancelRecruit(ctx, c.ID, rq.ID, now); !errors.Is(err, ErrNotCancelable) {
+		t.Fatalf("cancelar de novo deve dar ErrNotCancelable, veio %v", err)
+	}
+}

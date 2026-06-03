@@ -24,3 +24,7 @@ SELECT * FROM recruit_queue WHERE id = $1 FOR UPDATE;
 -- name: CompleteRecruitQueue :execrows
 UPDATE recruit_queue SET status = 'completed'
 WHERE id = $1 AND status = 'pending';
+
+-- name: CancelRecruitQueue :execrows
+UPDATE recruit_queue SET status = 'cancelled'
+WHERE id = $1 AND status = 'pending';

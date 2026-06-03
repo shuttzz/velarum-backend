@@ -12,6 +12,7 @@
 //   POST /cities/{id}/buildings                    -> constrói {building_type, x, y} — só do dono
 //   POST /cities/{id}/buildings/{bid}/upgrade      -> upgrade do edifício {bid} — só do dono
 //   POST /cities/{id}/buildings/{bid}/move         -> move o edifício {bid} para {x, y} — só do dono
+//   POST /cities/{id}/builds/{bid}/cancel          -> cancela a obra pendente {bid} (devolve 100%) — só do dono
 //   POST /cities/{id}/recruit                      -> recruta {unit_type, count} — só do dono
 //   GET  /cities/{id}/provinces                    -> províncias PvE do jogador (mapa) — só do dono
 //   POST /cities/{id}/march                        -> marcha {province_id, troops} — só do dono
@@ -211,6 +212,14 @@ func main() {
 		writeJSON(w, http.StatusAccepted, bq)
 	}))
 
+	mux.HandleFunc("POST /cities/{id}/builds/{bid}/cancel", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		if err := citySvc.CancelBuild(r.Context(), r.PathValue("id"), r.PathValue("bid"), time.Now().UTC()); err != nil {
+			writeErr(w, statusForBuildErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	mux.HandleFunc("GET /cities/{id}/provinces", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		provs, err := citySvc.ListProvinces(r.Context(), r.PathValue("id"), time.Now().UTC())
 		if err != nil {
@@ -293,7 +302,7 @@ func statusForBuildErr(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
 		errors.Is(err, city.ErrMaxCopies), errors.Is(err, city.ErrBadPlacement),
-		errors.Is(err, city.ErrBuildingBusy):
+		errors.Is(err, city.ErrBuildingBusy), errors.Is(err, city.ErrNotCancelable):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -384,6 +393,8 @@ func codeFor(err error) string {
 		return "bad_placement"
 	case errors.Is(err, city.ErrBuildingBusy):
 		return "building_busy"
+	case errors.Is(err, city.ErrNotCancelable):
+		return "not_cancelable"
 	case errors.Is(err, city.ErrUnitUnknown):
 		return "unit_unknown"
 	case errors.Is(err, city.ErrBadCount):

@@ -24,6 +24,7 @@ var (
 	ErrBadPlacement     = errors.New("posição inválida (fora da grade ou ocupada)")
 	ErrBuildingNotFound = errors.New("edifício não encontrado")
 	ErrBuildingBusy     = errors.New("já há uma construção em andamento neste edifício")
+	ErrNotCancelable    = errors.New("obra não pode ser cancelada (não está pendente)")
 )
 
 // BuildQueued descreve uma construção/upgrade recém-enfileirado.
@@ -211,6 +212,64 @@ func (s *Service) MoveBuilding(ctx context.Context, cityID, buildingID string, x
 		return ErrBadPlacement
 	}
 	if err := q.MoveCityBuilding(ctx, db.MoveCityBuildingParams{ID: bid, PosX: int32(x), PosY: int32(y)}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// CancelBuild cancela uma obra (construção nova ou upgrade) ainda PENDENTE e DEVOLVE 100%
+// do custo gasto. Idempotente-seguro: se já não está pendente, retorna ErrNotCancelable.
+// O evento agendado de conclusão vira no-op (CompleteBuild ignora o que não está pendente).
+func (s *Service) CancelBuild(ctx context.Context, cityID, buildQueueID string, now time.Time) error {
+	id, err := db.ParseUUID(cityID)
+	if err != nil {
+		return err
+	}
+	bqID, err := db.ParseUUID(buildQueueID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	item, err := q.GetBuildQueueForUpdate(ctx, bqID)
+	if err != nil {
+		return ErrBuildingNotFound
+	}
+	if !sameUUID(item.CityID, id) {
+		return ErrBuildingNotFound
+	}
+	n, err := q.CancelBuildQueue(ctx, bqID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotCancelable // já concluída/cancelada
+	}
+
+	// Devolve o custo ao estoque atual (devolução total).
+	def, ok := config.BuildingByKey(item.BuildingType)
+	if !ok {
+		return ErrBuildingUnknown
+	}
+	refund := config.CostFor(def.BaseCost, int(item.TargetLevel))
+	cityRow, err := q.GetCityForUpdate(ctx, id)
+	if err != nil {
+		return err
+	}
+	cur := stateFromRow(cityRow).At(now)
+	cur.Matter += refund.Matter
+	cur.Energy += refund.Energy
+	cur.Knowledge += refund.Knowledge
+	if err := q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
+		ID: id, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
+		MatterRate: cityRow.MatterRate, EnergyRate: cityRow.EnergyRate, KnowledgeRate: cityRow.KnowledgeRate, ResourcesUpdatedAt: now,
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -12,6 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelBuildQueue = `-- name: CancelBuildQueue :execrows
+UPDATE build_queue SET status = 'cancelled'
+WHERE id = $1 AND status = 'pending'
+`
+
+func (q *Queries) CancelBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelBuildQueue, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completeBuildQueue = `-- name: CompleteBuildQueue :execrows
 UPDATE build_queue SET status = 'completed'
 WHERE id = $1 AND status = 'pending'

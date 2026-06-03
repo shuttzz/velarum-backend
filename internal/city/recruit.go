@@ -18,6 +18,7 @@ var (
 	ErrNoBarracks      = errors.New("requer o Canteiro de Almas para recrutar")
 	ErrArmyCapExceeded = errors.New("teto de exército excedido")
 	ErrBadCount        = errors.New("quantidade inválida")
+	ErrUnitLocked      = errors.New("unidade ainda bloqueada (suba o Canteiro de Almas)")
 )
 
 // EventRecruitComplete é o tipo de evento agendado para concluir um recrutamento.
@@ -66,9 +67,13 @@ func (s *Service) EnqueueRecruit(ctx context.Context, cityID, unitType string, c
 		return RecruitQueued{}, err
 	}
 
-	capacity := config.ArmyCap(barracksLevel(buildings))
+	bLevel := barracksLevel(buildings)
+	capacity := config.ArmyCap(bLevel)
 	if capacity == 0 {
 		return RecruitQueued{}, ErrNoBarracks
+	}
+	if bLevel < def.MinBarracksLevel {
+		return RecruitQueued{}, ErrUnitLocked
 	}
 
 	// Uso atual = guarnição + recrutamentos pendentes (de qualquer tipo).

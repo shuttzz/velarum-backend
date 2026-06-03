@@ -18,19 +18,23 @@ type Amounts struct {
 }
 
 // State é o estado persistido de recursos de uma cidade: o último "snapshot" (Stored),
-// as taxas de produção por hora (RatePerHour), o teto de armazém (Capacity) e o instante
-// em que Stored foi calculado pela última vez (UpdatedAt).
+// as taxas de produção por hora (RatePerHour), a PARCELA PROTEGIDA contra saque (Capacity)
+// e o instante em que Stored foi calculado pela última vez (UpdatedAt).
+//
+// IMPORTANTE: Capacity NÃO é um teto de produção — os recursos sobem sem limite. Ela é só o
+// quanto fica ABRIGADO de saque; o excedente (acima de Capacity) é saqueável no PvP. O
+// armazém (Celeiro) aumenta essa parcela protegida. Cf. GDD §5/§11.
 type State struct {
 	Stored      Amounts
 	RatePerHour Amounts
-	Capacity    Amounts
+	Capacity    Amounts // parcela protegida contra saque (não é teto de acumulação)
 	UpdatedAt   time.Time
 }
 
 // At calcula a quantidade ATUAL de recursos em `now`, sem tocar em I/O.
 //
-// Este é o coração do gênero: recurso = armazenado + taxa * tempo_decorrido,
-// limitado pela capacidade do armazém. Uma cidade inativa há dias é calculada
+// Este é o coração do gênero: recurso = armazenado + taxa * tempo_decorrido. Sem teto de
+// acumulação (o estoque sobe livremente). Uma cidade inativa há dias é calculada
 // instantaneamente com uma multiplicação — sem nenhum "tick" rodando em background.
 func (s State) At(now time.Time) Amounts {
 	elapsed := now.Sub(s.UpdatedAt).Hours()
@@ -38,9 +42,20 @@ func (s State) At(now time.Time) Amounts {
 		elapsed = 0
 	}
 	return Amounts{
-		Matter:    clamp(s.Stored.Matter+s.RatePerHour.Matter*elapsed, s.Capacity.Matter),
-		Energy:    clamp(s.Stored.Energy+s.RatePerHour.Energy*elapsed, s.Capacity.Energy),
-		Knowledge: clamp(s.Stored.Knowledge+s.RatePerHour.Knowledge*elapsed, s.Capacity.Knowledge),
+		Matter:    floor0(s.Stored.Matter + s.RatePerHour.Matter*elapsed),
+		Energy:    floor0(s.Stored.Energy + s.RatePerHour.Energy*elapsed),
+		Knowledge: floor0(s.Stored.Knowledge + s.RatePerHour.Knowledge*elapsed),
+	}
+}
+
+// Raidable devolve, em `now`, o excedente saqueável por recurso (estoque acima da parcela
+// protegida pela Capacity). Base para a mecânica de saque do PvP.
+func (s State) Raidable(now time.Time) Amounts {
+	cur := s.At(now)
+	return Amounts{
+		Matter:    floor0(cur.Matter - s.Capacity.Matter),
+		Energy:    floor0(cur.Energy - s.Capacity.Energy),
+		Knowledge: floor0(cur.Knowledge - s.Capacity.Knowledge),
 	}
 }
 
@@ -71,13 +86,10 @@ func (s State) Spend(cost Amounts, now time.Time) (State, bool) {
 	return s, true
 }
 
-// clamp limita v ao intervalo [0, max]. Se max <= 0, é tratado como "sem teto".
-func clamp(v, max float64) float64 {
+// floor0 limita v a um piso de 0 (recursos nunca ficam negativos).
+func floor0(v float64) float64 {
 	if v < 0 {
 		return 0
-	}
-	if max > 0 && v > max {
-		return max
 	}
 	return v
 }

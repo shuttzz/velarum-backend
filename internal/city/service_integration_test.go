@@ -38,7 +38,7 @@ func TestCityLifecycle_Integration(t *testing.T) {
 	if city.Era != 1 {
 		t.Fatalf("era inicial = %d, quero 1", city.Era)
 	}
-	if city.Resources.Matter != 200 || city.Resources.Energy != 100 || city.Resources.Knowledge != 0 {
+	if city.Resources.Matter != 500 || city.Resources.Energy != 500 || city.Resources.Knowledge != 200 {
 		t.Fatalf("recursos iniciais inesperados: %+v", city.Resources)
 	}
 
@@ -47,7 +47,7 @@ func TestCityLifecycle_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCity: %v", err)
 	}
-	if loaded.ID != city.ID || loaded.Name != "Capital" || loaded.Resources.Matter != 200 {
+	if loaded.ID != city.ID || loaded.Name != "Capital" || loaded.Resources.Matter != 500 {
 		t.Fatalf("cidade recarregada divergente: %+v", loaded)
 	}
 
@@ -59,7 +59,7 @@ func TestCityLifecycle_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCity (2h depois): %v", err)
 	}
-	if later.Resources.Matter != 320 { // 200 + 60*2
-		t.Fatalf("Matéria após 2h = %v, quero 320", later.Resources.Matter)
+	if later.Resources.Matter != 620 { // 500 + 60*2 (sem teto)
+		t.Fatalf("Matéria após 2h = %v, quero 620", later.Resources.Matter)
 	}
 }

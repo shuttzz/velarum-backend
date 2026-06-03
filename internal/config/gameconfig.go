@@ -22,9 +22,11 @@ const (
 // Por ora há um único mundo; mais mundos/temporadas virão com matchmaking dedicado.
 const DefaultWorldID = "00000000-0000-7000-8000-000000000001"
 
-// Estado inicial de uma cidade nova.
+// Estado inicial de uma cidade nova. StartingResources é generoso o bastante para construir
+// os ~5 edifícios básicos no turno 1 (onboarding do gênero). StartingStorage é a PARCELA
+// PROTEGIDA inicial contra saque (não é teto — recursos sobem sem limite; cf. resource.State).
 var (
-	StartingResources = resource.Amounts{Matter: 200, Energy: 100, Knowledge: 0}
+	StartingResources = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 200}
 	StartingStorage   = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 200}
 )
 
@@ -88,19 +90,22 @@ type BuildingDef struct {
 }
 
 // Era1Buildings: catálogo de edifícios da Era 1 "Primeiros Fogos".
+// Onboarding: os 5 básicos (3 produtores + armazém + quartel) NÃO têm pré-requisito — dá pra
+// construir vários no turno 1. As estruturas avançadas mantêm a árvore de progressão.
+// Tempos baixos no início (1º build ~5s), seguindo o padrão do gênero.
 var Era1Buildings = []BuildingDef{
-	{Key: "lar_do_cla", Name: "Lar do Clã", Category: "central", BaseCost: resource.Amounts{Matter: 120, Energy: 60, Knowledge: 30}, BaseTime: 180, MaxCopies: 1, Era: 1},
-	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 8, BaseCost: resource.Amounts{Matter: 60, Energy: 20}, BaseTime: 30, MaxCopies: 3, Era: 1},
-	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 6, BaseCost: resource.Amounts{Matter: 50, Energy: 30, Knowledge: 10}, BaseTime: 45, MaxCopies: 3, Era: 1, Requires: []Requirement{{"lar_do_cla", 2}}},
-	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 3, BaseCost: resource.Amounts{Matter: 40, Energy: 20, Knowledge: 20}, BaseTime: 60, MaxCopies: 2, Era: 1, Requires: []Requirement{{"lar_do_cla", 3}}},
-	{Key: "celeiro_de_argila", Name: "Celeiro de Argila", Category: "storage", BaseCost: resource.Amounts{Matter: 80, Energy: 40}, BaseTime: 60, MaxCopies: 2, Era: 1},
-	{Key: "canteiro_de_almas", Name: "Canteiro de Almas", Category: "military", BaseCost: resource.Amounts{Matter: 100, Energy: 50, Knowledge: 20}, BaseTime: 120, MaxCopies: 1, Era: 1, Requires: []Requirement{{"lar_do_cla", 2}}},
-	{Key: "altar_das_fogueiras", Name: "Altar das Fogueiras", Category: "culture", BaseCost: resource.Amounts{Matter: 70, Energy: 80, Knowledge: 30}, BaseTime: 120, MaxCopies: 1, Era: 1, Requires: []Requirement{{"fogueira_comunal", 2}}},
-	{Key: "torre_do_vigia", Name: "Torre do Vigia", Category: "defense", BaseCost: resource.Amounts{Matter: 90, Energy: 30, Knowledge: 10}, BaseTime: 90, MaxCopies: 1, Era: 1, Requires: []Requirement{{"canteiro_de_almas", 1}}},
-	{Key: "circulo_runico", Name: "Círculo Rúnico", Category: "research", BaseCost: resource.Amounts{Matter: 60, Energy: 40, Knowledge: 40}, BaseTime: 90, MaxCopies: 1, Era: 1, Requires: []Requirement{{"pedra_da_memoria", 2}}},
-	{Key: "praca_do_conselho", Name: "Praça do Conselho", Category: "social", BaseCost: resource.Amounts{Matter: 150, Energy: 100, Knowledge: 50}, BaseTime: 300, MaxCopies: 1, Era: 1, Requires: []Requirement{{"lar_do_cla", 4}}},
-	{Key: "pira_dos_guerreiros", Name: "Pira dos Guerreiros", Category: "military_upgrade", BaseCost: resource.Amounts{Matter: 80, Energy: 60, Knowledge: 40}, BaseTime: 150, MaxCopies: 1, Era: 1, Requires: []Requirement{{"canteiro_de_almas", 2}}},
-	{Key: "marco_primeiros_fogos", Name: "Marco dos Primeiros Fogos", Category: "marco", BaseCost: resource.Amounts{Matter: 500, Energy: 300, Knowledge: 200}, BaseTime: 3600, MaxCopies: 1, Era: 1, Requires: []Requirement{{"lar_do_cla", 5}, {"pedra_da_memoria", 3}}},
+	{Key: "lar_do_cla", Name: "Lar do Clã", Category: "central", BaseCost: resource.Amounts{Matter: 120, Energy: 60, Knowledge: 30}, BaseTime: 30, MaxCopies: 1, Era: 1},
+	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 8, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1},
+	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 6, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1},
+	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 3, BaseCost: resource.Amounts{Matter: 60, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1},
+	{Key: "celeiro_de_argila", Name: "Celeiro de Argila", Category: "storage", BaseCost: resource.Amounts{Matter: 80, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1},
+	{Key: "canteiro_de_almas", Name: "Canteiro de Almas", Category: "military", BaseCost: resource.Amounts{Matter: 120, Energy: 80, Knowledge: 20}, BaseTime: 15, MaxCopies: 1, Era: 1},
+	{Key: "altar_das_fogueiras", Name: "Altar das Fogueiras", Category: "culture", BaseCost: resource.Amounts{Matter: 70, Energy: 80, Knowledge: 30}, BaseTime: 60, MaxCopies: 1, Era: 1, Requires: []Requirement{{"fogueira_comunal", 2}}},
+	{Key: "torre_do_vigia", Name: "Torre do Vigia", Category: "defense", BaseCost: resource.Amounts{Matter: 90, Energy: 30, Knowledge: 10}, BaseTime: 45, MaxCopies: 1, Era: 1, Requires: []Requirement{{"canteiro_de_almas", 1}}},
+	{Key: "circulo_runico", Name: "Círculo Rúnico", Category: "research", BaseCost: resource.Amounts{Matter: 60, Energy: 40, Knowledge: 40}, BaseTime: 60, MaxCopies: 1, Era: 1, Requires: []Requirement{{"pedra_da_memoria", 2}}},
+	{Key: "praca_do_conselho", Name: "Praça do Conselho", Category: "social", BaseCost: resource.Amounts{Matter: 150, Energy: 100, Knowledge: 50}, BaseTime: 120, MaxCopies: 1, Era: 1, Requires: []Requirement{{"lar_do_cla", 4}}},
+	{Key: "pira_dos_guerreiros", Name: "Pira dos Guerreiros", Category: "military_upgrade", BaseCost: resource.Amounts{Matter: 80, Energy: 60, Knowledge: 40}, BaseTime: 90, MaxCopies: 1, Era: 1, Requires: []Requirement{{"canteiro_de_almas", 2}}},
+	{Key: "marco_primeiros_fogos", Name: "Marco dos Primeiros Fogos", Category: "marco", BaseCost: resource.Amounts{Matter: 500, Energy: 300, Knowledge: 200}, BaseTime: 600, MaxCopies: 1, Era: 1, Requires: []Requirement{{"lar_do_cla", 5}, {"pedra_da_memoria", 3}}},
 }
 
 // EraAdvanceReq descreve os requisitos para avançar de era.

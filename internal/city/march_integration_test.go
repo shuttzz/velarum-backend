@@ -80,7 +80,7 @@ func TestMarchFlow_Integration(t *testing.T) {
 		t.Fatalf("província deveria estar conquistada: %+v", conquered)
 	}
 	loaded, _ = svc.LoadCity(ctx, c.ID, m.ArriveAt)
-	wantMatter := 200 + target.Reward.Matter // estoque inicial 200 + recompensa
+	wantMatter := 500 + target.Reward.Matter // estoque inicial 500 + recompensa
 	if loaded.Resources.Matter != wantMatter {
 		t.Fatalf("recompensa não aplicada: matéria = %v, quero %v", loaded.Resources.Matter, wantMatter)
 	}

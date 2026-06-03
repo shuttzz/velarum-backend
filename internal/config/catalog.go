@@ -35,15 +35,16 @@ type CatalogGrowth struct {
 
 // CatalogUnit é a forma serializável (JSON) de uma UnitDef, exposta ao cliente.
 type CatalogUnit struct {
-	Key         string           `json:"key"`
-	Name        string           `json:"name"`
-	Category    string           `json:"category"`
-	Attack      int              `json:"attack"`
-	Defense     int              `json:"defense"`
-	HP          int              `json:"hp"`
-	Cost        resource.Amounts `json:"cost"`
-	RecruitTime float64          `json:"recruit_time"`
-	Era         int              `json:"era"`
+	Key             string           `json:"key"`
+	Name            string           `json:"name"`
+	Category        string           `json:"category"`
+	Attack          int              `json:"attack"`
+	Defense         int              `json:"defense"`
+	HP              int              `json:"hp"`
+	Cost            resource.Amounts `json:"cost"`
+	RecruitTime     float64          `json:"recruit_time"`
+	MinBarracksLevel int             `json:"min_barracks_level"`
+	Era             int              `json:"era"`
 }
 
 // CatalogPayload é o corpo do endpoint GET /catalog: todos os edifícios e unidades
@@ -82,7 +83,7 @@ func Catalog() CatalogPayload {
 	for _, u := range Era1Units {
 		units = append(units, CatalogUnit{
 			Key: u.Key, Name: u.Name, Category: u.Category, Attack: u.Attack, Defense: u.Defense,
-			HP: u.HP, Cost: u.Cost, RecruitTime: u.RecruitTime, Era: u.Era,
+			HP: u.HP, Cost: u.Cost, RecruitTime: u.RecruitTime, MinBarracksLevel: u.MinBarracksLevel, Era: u.Era,
 		})
 	}
 	return CatalogPayload{

@@ -21,12 +21,17 @@ func TestCatalogNormalizesFootprintAndPreservesRequires(t *testing.T) {
 		byKey[b.Key] = b
 	}
 
-	fog, ok := byKey["fogueira_comunal"]
-	if !ok {
-		t.Fatal("fogueira_comunal ausente do catálogo")
+	// Os 5 básicos não têm pré-requisito (onboarding); os avançados mantêm a árvore.
+	if len(byKey["fogueira_comunal"].Requires) != 0 || len(byKey["canteiro_de_almas"].Requires) != 0 {
+		t.Fatalf("básicos não deveriam ter pré-requisito: fogueira=%+v canteiro=%+v",
+			byKey["fogueira_comunal"].Requires, byKey["canteiro_de_almas"].Requires)
 	}
-	if len(fog.Requires) != 1 || fog.Requires[0].BuildingKey != "lar_do_cla" || fog.Requires[0].Level != 2 {
-		t.Fatalf("requires de fogueira_comunal incorreto: %+v", fog.Requires)
+	altar, ok := byKey["altar_das_fogueiras"]
+	if !ok {
+		t.Fatal("altar_das_fogueiras ausente do catálogo")
+	}
+	if len(altar.Requires) != 1 || altar.Requires[0].BuildingKey != "fogueira_comunal" || altar.Requires[0].Level != 2 {
+		t.Fatalf("requires de altar_das_fogueiras incorreto: %+v", altar.Requires)
 	}
 
 	// O Marco tem 2 pré-requisitos — todos devem ser preservados na serialização.

@@ -317,7 +317,8 @@ func statusForRecruitErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
 		return http.StatusBadRequest
-	case errors.Is(err, city.ErrNoBarracks), errors.Is(err, city.ErrArmyCapExceeded), errors.Is(err, city.ErrInsufficient):
+	case errors.Is(err, city.ErrNoBarracks), errors.Is(err, city.ErrArmyCapExceeded),
+		errors.Is(err, city.ErrUnitLocked), errors.Is(err, city.ErrInsufficient):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -391,6 +392,8 @@ func codeFor(err error) string {
 		return "no_barracks"
 	case errors.Is(err, city.ErrArmyCapExceeded):
 		return "army_cap_exceeded"
+	case errors.Is(err, city.ErrUnitLocked):
+		return "unit_locked"
 	case errors.Is(err, city.ErrProvinceNotFound):
 		return "province_not_found"
 	case errors.Is(err, city.ErrProvinceConquered):

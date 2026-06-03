@@ -63,7 +63,9 @@ func main() {
 	// Secure só em produção (HTTPS); em dev sob http o cookie Secure não é enviado.
 	authSvc := auth.NewService(pool, os.Getenv("SESSION_COOKIE_SECURE") == "true")
 
-	sch := scheduler.New(eventstore.NewPgStore(pool), time.Second)
+	// Tick curto (250ms) para que obras/recrutamentos/marchas concluam logo após o finish_at,
+	// mantendo o contador visual em sincronia com o servidor (o frontend refaz o fetch no zero).
+	sch := scheduler.New(eventstore.NewPgStore(pool), 250*time.Millisecond)
 	sch.Handle(city.EventBuildComplete, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.CompleteBuildEvent(ctx, e.Payload, time.Now().UTC())
 	})

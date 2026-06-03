@@ -47,6 +47,7 @@ type City struct {
 	Troops    []Troop          `json:"troops"`
 	Recruits  []RecruitQueued  `json:"recruits"`
 	ArmyCap   int              `json:"army_cap"`
+	Marches   []March          `json:"marches"`
 	ServerNow time.Time         `json:"server_now"`
 }
 
@@ -294,6 +295,13 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 			ID: db.UUIDString(r.ID), UnitType: r.UnitType, Count: int(r.Count), FinishAt: r.FinishAt,
 		})
 	}
+	marches, err := s.q.ListActiveMarches(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, m := range marches {
+		c.Marches = append(c.Marches, marchToDomain(m))
+	}
 	return c, nil
 }
 
@@ -331,7 +339,7 @@ func toDomainCity(c db.City, now time.Time) City {
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
 		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},
-		Troops: []Troop{}, Recruits: []RecruitQueued{}, ServerNow: now,
+		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, ServerNow: now,
 	}
 }
 

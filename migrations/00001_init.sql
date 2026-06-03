@@ -126,6 +126,46 @@ CREATE TABLE recruit_queue (
 );
 CREATE INDEX idx_recruit_queue_pending ON recruit_queue (finish_at) WHERE status = 'pending';
 
+-- Províncias PvE — INSTANCIADAS por jogador (cada um tem o seu conjunto a conquistar).
+-- Mapa hex com a cidade no centro (0,0); anel 1 = Era 1. Coords axiais (q,r).
+CREATE TABLE provinces (
+    id               UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id         UUID NOT NULL REFERENCES worlds(id),
+    player_id        UUID NOT NULL REFERENCES players(id),
+    name_key         TEXT NOT NULL,
+    q                INTEGER NOT NULL,
+    r                INTEGER NOT NULL,
+    ring             SMALLINT NOT NULL,
+    def_attack       INTEGER NOT NULL,
+    def_hp           INTEGER NOT NULL,
+    reward_matter    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reward_energy    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reward_knowledge DOUBLE PRECISION NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'unconquered', -- unconquered | conquered
+    conquered_at     TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (player_id, q, r)
+);
+CREATE INDEX idx_provinces_player ON provinces (player_id);
+
+-- Marchas: exército que saiu da cidade rumo a uma província. Marcha = TIMER (ida → combate
+-- → volta), espelhado em scheduled_events (troop.arrival / troop.return).
+CREATE TABLE marches (
+    id           UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id     UUID NOT NULL REFERENCES worlds(id),
+    city_id      UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    province_id  UUID NOT NULL REFERENCES provinces(id),
+    troops       JSONB NOT NULL,            -- {unit_type: count} enviado
+    survivors    JSONB,                     -- {unit_type: count} após o combate
+    attacker_won BOOLEAN,
+    status       TEXT NOT NULL DEFAULT 'outbound', -- outbound | returning | done
+    depart_at    TIMESTAMPTZ NOT NULL,
+    arrive_at    TIMESTAMPTZ NOT NULL,      -- chegada ao destino (combate)
+    return_at    TIMESTAMPTZ,               -- chegada de volta à cidade
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_marches_active ON marches (city_id) WHERE status <> 'done';
+
 -- Fonte de verdade dos eventos futuros agendados (scheduler).
 -- Recarregada no boot -> eventos sobrevivem a restart. Processamento idempotente.
 CREATE TABLE scheduled_events (
@@ -146,6 +186,8 @@ VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
 DROP TABLE IF EXISTS scheduled_events;
+DROP TABLE IF EXISTS marches;
+DROP TABLE IF EXISTS provinces;
 DROP TABLE IF EXISTS recruit_queue;
 DROP TABLE IF EXISTS city_troops;
 DROP TABLE IF EXISTS build_queue;

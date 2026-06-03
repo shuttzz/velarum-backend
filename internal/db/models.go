@@ -70,6 +70,21 @@ type CityTroop struct {
 	Count    int32       `json:"count"`
 }
 
+type March struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorldID     pgtype.UUID        `json:"world_id"`
+	CityID      pgtype.UUID        `json:"city_id"`
+	ProvinceID  pgtype.UUID        `json:"province_id"`
+	Troops      []byte             `json:"troops"`
+	Survivors   []byte             `json:"survivors"`
+	AttackerWon *bool              `json:"attacker_won"`
+	Status      string             `json:"status"`
+	DepartAt    time.Time          `json:"depart_at"`
+	ArriveAt    time.Time          `json:"arrive_at"`
+	ReturnAt    pgtype.Timestamptz `json:"return_at"`
+	CreatedAt   time.Time          `json:"created_at"`
+}
+
 type Player struct {
 	ID         pgtype.UUID        `json:"id"`
 	WorldID    pgtype.UUID        `json:"world_id"`
@@ -79,6 +94,24 @@ type Player struct {
 	Era        int16              `json:"era"`
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
 	CreatedAt  time.Time          `json:"created_at"`
+}
+
+type Province struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorldID         pgtype.UUID        `json:"world_id"`
+	PlayerID        pgtype.UUID        `json:"player_id"`
+	NameKey         string             `json:"name_key"`
+	Q               int32              `json:"q"`
+	R               int32              `json:"r"`
+	Ring            int16              `json:"ring"`
+	DefAttack       int32              `json:"def_attack"`
+	DefHp           int32              `json:"def_hp"`
+	RewardMatter    float64            `json:"reward_matter"`
+	RewardEnergy    float64            `json:"reward_energy"`
+	RewardKnowledge float64            `json:"reward_knowledge"`
+	Status          string             `json:"status"`
+	ConqueredAt     pgtype.Timestamptz `json:"conquered_at"`
+	CreatedAt       time.Time          `json:"created_at"`
 }
 
 type RecruitQueue struct {

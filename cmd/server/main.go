@@ -13,6 +13,8 @@
 //   POST /cities/{id}/buildings/{bid}/upgrade      -> upgrade do edifício {bid} — só do dono
 //   POST /cities/{id}/buildings/{bid}/move         -> move o edifício {bid} para {x, y} — só do dono
 //   POST /cities/{id}/recruit                      -> recruta {unit_type, count} — só do dono
+//   GET  /cities/{id}/provinces                    -> províncias PvE do jogador (mapa) — só do dono
+//   POST /cities/{id}/march                        -> marcha {province_id, troops} — só do dono
 package main
 
 import (
@@ -64,6 +66,12 @@ func main() {
 	})
 	sch.Handle(city.EventRecruitComplete, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.CompleteRecruitEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventTroopArrival, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveArrivalEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventTroopReturn, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveReturnEvent(ctx, e.Payload, time.Now().UTC())
 	})
 	go sch.Run(ctx)
 
@@ -203,6 +211,32 @@ func main() {
 		writeJSON(w, http.StatusAccepted, bq)
 	}))
 
+	mux.HandleFunc("GET /cities/{id}/provinces", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		provs, err := citySvc.ListProvinces(r.Context(), r.PathValue("id"), time.Now().UTC())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, provs)
+	}))
+
+	mux.HandleFunc("POST /cities/{id}/march", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProvinceID string         `json:"province_id"`
+			Troops     map[string]int `json:"troops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		m, err := citySvc.StartMarch(r.Context(), r.PathValue("id"), body.ProvinceID, body.Troops, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForMarchErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, m)
+	}))
+
 	mux.HandleFunc("POST /cities/{id}/recruit", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			UnitType string `json:"unit_type"`
@@ -260,6 +294,19 @@ func statusForBuildErr(err error) int {
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
 		errors.Is(err, city.ErrMaxCopies), errors.Is(err, city.ErrBadPlacement),
 		errors.Is(err, city.ErrBuildingBusy):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func statusForMarchErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrProvinceNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrProvinceConquered), errors.Is(err, city.ErrNoTroops):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -344,6 +391,12 @@ func codeFor(err error) string {
 		return "no_barracks"
 	case errors.Is(err, city.ErrArmyCapExceeded):
 		return "army_cap_exceeded"
+	case errors.Is(err, city.ErrProvinceNotFound):
+		return "province_not_found"
+	case errors.Is(err, city.ErrProvinceConquered):
+		return "province_conquered"
+	case errors.Is(err, city.ErrNoTroops):
+		return "no_troops"
 	default:
 		return "internal"
 	}

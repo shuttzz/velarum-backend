@@ -15,6 +15,7 @@ type Querier interface {
 	AddCityTroops(ctx context.Context, arg AddCityTroopsParams) error
 	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
+	CountPlayerProvinces(ctx context.Context, playerID pgtype.UUID) (int64, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateCity(ctx context.Context, arg CreateCityParams) (City, error)
 	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error)
@@ -32,24 +33,33 @@ type Querier interface {
 	GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) (CityBuilding, error)
 	GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error)
 	GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error)
+	GetMarchForUpdate(ctx context.Context, id pgtype.UUID) (March, error)
 	GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 	GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerByAccountAndWorldParams) (Player, error)
+	GetProvinceForUpdate(ctx context.Context, id pgtype.UUID) (Province, error)
 	GetRecruitForUpdate(ctx context.Context, id pgtype.UUID) (RecruitQueue, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
 	GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error)
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
+	InsertMarch(ctx context.Context, arg InsertMarchParams) (March, error)
+	InsertProvince(ctx context.Context, arg InsertProvinceParams) (Province, error)
 	InsertRecruitQueue(ctx context.Context, arg InsertRecruitQueueParams) (RecruitQueue, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
+	ListActiveMarches(ctx context.Context, cityID pgtype.UUID) ([]March, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
 	ListCityTroops(ctx context.Context, cityID pgtype.UUID) ([]CityTroop, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
+	ListPlayerProvinces(ctx context.Context, playerID pgtype.UUID) ([]Province, error)
 	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	MoveCityBuilding(ctx context.Context, arg MoveCityBuildingParams) error
 	SetCityBuildingLevel(ctx context.Context, arg SetCityBuildingLevelParams) error
+	SetMarchDone(ctx context.Context, id pgtype.UUID) error
+	SetMarchResult(ctx context.Context, arg SetMarchResultParams) error
+	SetProvinceConquered(ctx context.Context, arg SetProvinceConqueredParams) error
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 }

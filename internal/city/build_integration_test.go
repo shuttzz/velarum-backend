@@ -30,6 +30,12 @@ func TestBuildFlow_Integration(t *testing.T) {
 
 	c := enterTestGame(t, svc, pool, "brevali", now)
 
+	// Posição inválida: construir em cima do Lar do Clã (centro) -> ErrBadPlacement.
+	// (Checado com a fila vazia: na Era 1 só há 1 fila de obra, então precisa vir antes da 1ª obra.)
+	if _, err := svc.EnqueueConstruct(ctx, c.ID, "celeiro_de_argila", c.GridW/2, c.GridH/2, now); !errors.Is(err, ErrBadPlacement) {
+		t.Fatalf("esperava ErrBadPlacement, obtive %v", err)
+	}
+
 	// Construir um Viveiro de Pedra na célula (0,0). Custo nível 1: Matéria 50, Energia 20.
 	bq, err := svc.EnqueueConstruct(ctx, c.ID, "viveiro_de_pedra", 0, 0, now)
 	if err != nil {
@@ -37,11 +43,6 @@ func TestBuildFlow_Integration(t *testing.T) {
 	}
 	if bq.X != 0 || bq.Y != 0 {
 		t.Fatalf("posição = (%d,%d), quero (0,0)", bq.X, bq.Y)
-	}
-
-	// Posição inválida: construir em cima do Lar do Clã (centro) -> ErrBadPlacement.
-	if _, err := svc.EnqueueConstruct(ctx, c.ID, "celeiro_de_argila", c.GridW/2, c.GridH/2, now); !errors.Is(err, ErrBadPlacement) {
-		t.Fatalf("esperava ErrBadPlacement, obtive %v", err)
 	}
 
 	// Recursos gastos: 500-50=450 Matéria, 500-20=480 Energia.

@@ -19,6 +19,7 @@ var (
 	ErrArmyCapExceeded = errors.New("teto de exército excedido")
 	ErrBadCount        = errors.New("quantidade inválida")
 	ErrUnitLocked      = errors.New("unidade ainda bloqueada (suba o Canteiro de Almas)")
+	ErrRecruitBusy     = errors.New("já há um recrutamento deste tipo em andamento")
 )
 
 // EventRecruitComplete é o tipo de evento agendado para concluir um recrutamento.
@@ -84,6 +85,12 @@ func (s *Service) EnqueueRecruit(ctx context.Context, cityID, unitType string, c
 	pending, err := q.ListPendingRecruits(ctx, id)
 	if err != nil {
 		return RecruitQueued{}, err
+	}
+	// Recrutamento: 1 lane por TIPO de unidade. Já treinando este tipo → recusa.
+	for _, p := range pending {
+		if p.UnitType == unitType {
+			return RecruitQueued{}, ErrRecruitBusy
+		}
 	}
 	used := 0
 	for _, t := range troops {

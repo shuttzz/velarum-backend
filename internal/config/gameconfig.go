@@ -31,6 +31,25 @@ var StartingResources = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 20
 // Abrem ao AVANÇAR DE ERA (de graça) — nunca por pagamento.
 var SlotsByEra = []int{12, 16, 20, 24, 28, 32, 36}
 
+// QueuesForEra é o nº de FILAS (lanes) SIMULTÂNEAS de obra/marcha numa dada era. NÃO confundir
+// com SlotsByEra (espaço da grade). Cresce nas eras 3, 5, 6 e 7 (obras/viagens ficam mais
+// longas → a fila vira o gargalo); teto absoluto = 5. Construção (obra+upgrade juntas) e marcha
+// usam a MESMA tabela. Aluguel pago TEMPORÁRIO (futuro, GDD §13) somará até base+1, sempre ≤ 5.
+func QueuesForEra(era int) int {
+	switch {
+	case era >= 7:
+		return 5
+	case era == 6:
+		return 4
+	case era == 5:
+		return 3
+	case era >= 3: // eras 3–4
+		return 2
+	default: // eras 1–2
+		return 1
+	}
+}
+
 // Teto de exército (cresce com o nível do Canteiro de Almas).
 const (
 	ArmyCapBase          = 20

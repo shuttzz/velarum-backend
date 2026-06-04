@@ -166,6 +166,15 @@ func (s *Service) StartMarch(ctx context.Context, cityID, provinceID string, tro
 		return March{}, ErrProvinceConquered
 	}
 
+	// Fila de marcha: nº de marchas ativas (ida/volta) limitado por era (mesma tabela da obra).
+	active, err := q.ListActiveMarches(ctx, id)
+	if err != nil {
+		return March{}, err
+	}
+	if len(active) >= config.QueuesForEra(int(cityRow.Era)) {
+		return March{}, ErrQueueFull
+	}
+
 	garrison := map[string]int{}
 	rows, err := q.ListCityTroops(ctx, id)
 	if err != nil {

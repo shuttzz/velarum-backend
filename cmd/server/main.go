@@ -389,7 +389,8 @@ func statusForBuildErr(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrInsufficient), errors.Is(err, city.ErrPrereqNotMet),
 		errors.Is(err, city.ErrMaxCopies), errors.Is(err, city.ErrBadPlacement),
-		errors.Is(err, city.ErrBuildingBusy), errors.Is(err, city.ErrNotCancelable):
+		errors.Is(err, city.ErrBuildingBusy), errors.Is(err, city.ErrNotCancelable),
+		errors.Is(err, city.ErrQueueFull):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -402,7 +403,8 @@ func statusForMarchErr(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, city.ErrProvinceNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, city.ErrProvinceConquered), errors.Is(err, city.ErrNoTroops):
+	case errors.Is(err, city.ErrProvinceConquered), errors.Is(err, city.ErrNoTroops),
+		errors.Is(err, city.ErrQueueFull):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -428,7 +430,8 @@ func statusForRecruitErr(err error) int {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
 		return http.StatusBadRequest
 	case errors.Is(err, city.ErrNoBarracks), errors.Is(err, city.ErrArmyCapExceeded),
-		errors.Is(err, city.ErrUnitLocked), errors.Is(err, city.ErrInsufficient):
+		errors.Is(err, city.ErrUnitLocked), errors.Is(err, city.ErrInsufficient),
+		errors.Is(err, city.ErrRecruitBusy):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -496,6 +499,8 @@ func codeFor(err error) string {
 		return "building_busy"
 	case errors.Is(err, city.ErrNotCancelable):
 		return "not_cancelable"
+	case errors.Is(err, city.ErrQueueFull):
+		return "queue_full"
 	case errors.Is(err, city.ErrUnitUnknown):
 		return "unit_unknown"
 	case errors.Is(err, city.ErrBadCount):
@@ -506,6 +511,8 @@ func codeFor(err error) string {
 		return "army_cap_exceeded"
 	case errors.Is(err, city.ErrUnitLocked):
 		return "unit_locked"
+	case errors.Is(err, city.ErrRecruitBusy):
+		return "recruit_busy"
 	case errors.Is(err, city.ErrProvinceNotFound):
 		return "province_not_found"
 	case errors.Is(err, city.ErrProvinceConquered):

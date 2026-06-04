@@ -25,6 +25,7 @@ var (
 	ErrBuildingNotFound = errors.New("edifício não encontrado")
 	ErrBuildingBusy     = errors.New("já há uma construção em andamento neste edifício")
 	ErrNotCancelable    = errors.New("obra não pode ser cancelada (não está pendente)")
+	ErrQueueFull        = errors.New("limite de filas em uso — aguarde uma operação terminar")
 )
 
 // BuildQueued descreve uma construção/upgrade recém-enfileirado.
@@ -74,6 +75,11 @@ func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType str
 	pending, err := q.ListPendingBuilds(ctx, id)
 	if err != nil {
 		return BuildQueued{}, err
+	}
+
+	// Fila de obra: construção nova + upgrade contam juntas (= pendências ativas). Limite por era.
+	if len(pending) >= config.QueuesForEra(int(cityRow.Era)) {
+		return BuildQueued{}, ErrQueueFull
 	}
 
 	if err := checkPrereqs(def, buildings); err != nil {
@@ -153,6 +159,10 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, cityID, buildingID string,
 		if sameUUID(p.BuildingID, bid) {
 			return BuildQueued{}, ErrBuildingBusy
 		}
+	}
+	// Fila de obra cheia (construção + upgrade contam juntas). Limite por era.
+	if len(pending) >= config.QueuesForEra(int(cityRow.Era)) {
+		return BuildQueued{}, ErrQueueFull
 	}
 	def, ok := config.BuildingByKey(current.BuildingType)
 	if !ok {

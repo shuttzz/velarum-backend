@@ -23,12 +23,9 @@ const (
 const DefaultWorldID = "00000000-0000-7000-8000-000000000001"
 
 // Estado inicial de uma cidade nova. StartingResources é generoso o bastante para construir
-// os ~5 edifícios básicos no turno 1 (onboarding do gênero). StartingStorage é a PARCELA
-// PROTEGIDA inicial contra saque (não é teto — recursos sobem sem limite; cf. resource.State).
-var (
-	StartingResources = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 200}
-	StartingStorage   = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 200}
-)
+// os ~5 edifícios básicos no turno 1 (onboarding do gênero). A PARCELA PROTEGIDA contra saque
+// começa em 0 — só passa a existir após construir o Celeiro de Argila (ver StorageCapFor).
+var StartingResources = resource.Amounts{Matter: 500, Energy: 500, Knowledge: 200}
 
 // SlotsByEra: slots de construção por era (índice 0 = Era 1).
 // Abrem ao AVANÇAR DE ERA (de graça) — nunca por pagamento.
@@ -61,8 +58,16 @@ func BuildTimeFor(baseSeconds float64, level int) time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
-// StorageCapFor calcula a capacidade de armazém (por recurso) de um Celeiro de Argila por nível.
+// StorageKey é a key do edifício que define a parcela PROTEGIDA contra saque (Celeiro de Argila).
+// A cidade começa SEM proteção (cap 0); só o Celeiro a concede. Limite de 1 cópia.
+const StorageKey = "celeiro_de_argila"
+
+// StorageCapFor calcula a parcela protegida (por recurso) concedida por um Celeiro de Argila no
+// nível dado. Sem Celeiro a proteção é 0 — não há proteção inicial "de graça".
 func StorageCapFor(level int) float64 {
+	if level <= 0 {
+		return 0
+	}
 	n := float64(level - 1)
 	return 500 + n*300 + math.Floor(n*n*50)
 }
@@ -87,6 +92,10 @@ type BuildingDef struct {
 	Era       int
 	Width     int // footprint em células (0 = 1)
 	Height    int // footprint em células (0 = 1)
+	// Implemented indica que o edifício tem efeito de jogo de fato (produção, proteção, militar,
+	// gating). Os ainda-placeholder ficam FORA do catálogo e não podem ser construídos — evita o
+	// jogador gastar recursos em algo sem efeito. Liga-se conforme cada um é implementado.
+	Implemented bool
 }
 
 // Era1Buildings: catálogo de edifícios da Era 1 "Primeiros Fogos".
@@ -94,12 +103,12 @@ type BuildingDef struct {
 // construir vários no turno 1. As estruturas avançadas mantêm a árvore de progressão.
 // Tempos baixos no início (1º build ~5s), seguindo o padrão do gênero.
 var Era1Buildings = []BuildingDef{
-	{Key: "lar_do_cla", Name: "Lar do Clã", Category: "central", BaseCost: resource.Amounts{Matter: 120, Energy: 60, Knowledge: 30}, BaseTime: 30, MaxCopies: 1, Era: 1},
-	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 8, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1},
-	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 6, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1},
-	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 3, BaseCost: resource.Amounts{Matter: 60, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1},
-	{Key: "celeiro_de_argila", Name: "Celeiro de Argila", Category: "storage", BaseCost: resource.Amounts{Matter: 80, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1},
-	{Key: "canteiro_de_almas", Name: "Canteiro de Almas", Category: "military", BaseCost: resource.Amounts{Matter: 120, Energy: 80, Knowledge: 20}, BaseTime: 15, MaxCopies: 1, Era: 1},
+	{Key: "lar_do_cla", Name: "Lar do Clã", Category: "central", BaseCost: resource.Amounts{Matter: 120, Energy: 60, Knowledge: 30}, BaseTime: 30, MaxCopies: 1, Era: 1, Implemented: true},
+	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 8, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
+	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 6, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
+	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 3, BaseCost: resource.Amounts{Matter: 60, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1, Implemented: true},
+	{Key: "celeiro_de_argila", Name: "Celeiro de Argila", Category: "storage", BaseCost: resource.Amounts{Matter: 80, Energy: 40}, BaseTime: 8, MaxCopies: 1, Era: 1, Implemented: true},
+	{Key: "canteiro_de_almas", Name: "Canteiro de Almas", Category: "military", BaseCost: resource.Amounts{Matter: 120, Energy: 80, Knowledge: 20}, BaseTime: 15, MaxCopies: 1, Era: 1, Implemented: true},
 	{Key: "altar_das_fogueiras", Name: "Altar das Fogueiras", Category: "culture", BaseCost: resource.Amounts{Matter: 70, Energy: 80, Knowledge: 30}, BaseTime: 60, MaxCopies: 1, Era: 1, Requires: []Requirement{{"fogueira_comunal", 2}}},
 	{Key: "torre_do_vigia", Name: "Torre do Vigia", Category: "defense", BaseCost: resource.Amounts{Matter: 90, Energy: 30, Knowledge: 10}, BaseTime: 45, MaxCopies: 1, Era: 1, Requires: []Requirement{{"canteiro_de_almas", 1}}},
 	{Key: "circulo_runico", Name: "Círculo Rúnico", Category: "research", BaseCost: resource.Amounts{Matter: 60, Energy: 40, Knowledge: 40}, BaseTime: 60, MaxCopies: 1, Era: 1, Requires: []Requirement{{"pedra_da_memoria", 2}}},

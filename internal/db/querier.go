@@ -72,6 +72,7 @@ type Querier interface {
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
+	UpdateCityStorageCaps(ctx context.Context, arg UpdateCityStorageCapsParams) error
 }
 
 var _ Querier = (*Queries)(nil)

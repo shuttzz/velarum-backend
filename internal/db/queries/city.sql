@@ -36,6 +36,11 @@ UPDATE cities SET
     resources_updated_at = $8
 WHERE id = $1;
 
+-- name: UpdateCityStorageCaps :exec
+UPDATE cities SET
+    matter_cap = $2, energy_cap = $3, knowledge_cap = $4
+WHERE id = $1;
+
 -- name: InsertCityBuilding :one
 INSERT INTO city_buildings (city_id, building_type, level, pos_x, pos_y)
 VALUES ($1, $2, $3, $4, $5)

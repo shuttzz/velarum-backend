@@ -47,7 +47,8 @@ type buildCompletePayload struct {
 // EnqueueConstruct enfileira a construção de um NOVO edifício (nível 1) na posição (x,y).
 func (s *Service) EnqueueConstruct(ctx context.Context, cityID, buildingType string, x, y int, now time.Time) (BuildQueued, error) {
 	def, ok := config.BuildingByKey(buildingType)
-	if !ok {
+	if !ok || !def.Implemented {
+		// Edifício inexistente OU ainda-placeholder (fora do catálogo): não é construível.
 		return BuildQueued{}, ErrBuildingUnknown
 	}
 	id, err := db.ParseUUID(cityID)
@@ -390,6 +391,7 @@ func recomputeProduction(ctx context.Context, q *db.Queries, cityID pgtype.UUID,
 		return err
 	}
 	var rate resource.Amounts
+	var protectedCap float64 // parcela protegida contra saque, vinda do(s) Celeiro(s) de Argila
 	for _, b := range buildings {
 		if def, ok := config.BuildingByKey(b.BuildingType); ok {
 			p := def.ProductionAt(int(b.Level))
@@ -397,11 +399,21 @@ func recomputeProduction(ctx context.Context, q *db.Queries, cityID pgtype.UUID,
 			rate.Energy += p.Energy
 			rate.Knowledge += p.Knowledge
 		}
+		if b.BuildingType == config.StorageKey {
+			protectedCap += config.StorageCapFor(int(b.Level))
+		}
 	}
 	cur := stateFromRow(cityRow).At(now)
-	return q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
+	if err := q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
 		ID: cityID, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
 		MatterRate: rate.Matter, EnergyRate: rate.Energy, KnowledgeRate: rate.Knowledge, ResourcesUpdatedAt: now,
+	}); err != nil {
+		return err
+	}
+	// Cap protegido (mesmo valor para os 3 recursos) recalculado a partir do Celeiro de Argila.
+	// Sem Celeiro → 0 (cidade nova não tem proteção).
+	return q.UpdateCityStorageCaps(ctx, db.UpdateCityStorageCapsParams{
+		ID: cityID, MatterCap: protectedCap, EnergyCap: protectedCap, KnowledgeCap: protectedCap,
 	})
 }
 

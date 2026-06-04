@@ -152,13 +152,14 @@ func (s *Service) EnterWorld(ctx context.Context, accountID, faction, cityName s
 	cx, cy := allocateFreeCoord(taken)
 
 	start := config.StartingResources
-	capStore := config.StartingStorage
+	// Cidade nova começa SEM proteção contra saque (cap 0/0/0). A parcela protegida só passa a
+	// existir após construir o Celeiro de Argila (recomputeProduction recalcula os caps).
 	row, err := q.CreateCity(ctx, db.CreateCityParams{
 		WorldID: worldUUID, PlayerID: player.ID, Name: cityName,
 		CoordX: int32(cx), CoordY: int32(cy), Era: 1,
 		MatterStored: start.Matter, EnergyStored: start.Energy, KnowledgeStored: start.Knowledge,
 		MatterRate: 0, EnergyRate: 0, KnowledgeRate: 0,
-		MatterCap: capStore.Matter, EnergyCap: capStore.Energy, KnowledgeCap: capStore.Knowledge,
+		MatterCap: 0, EnergyCap: 0, KnowledgeCap: 0,
 		ResourcesUpdatedAt: now,
 	})
 	if err != nil {

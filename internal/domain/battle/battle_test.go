@@ -108,3 +108,60 @@ func TestDeterminismo(t *testing.T) {
 		t.Fatalf("não determinístico: (%s,%d) vs (%s,%d)", w1, hp1, w2, hp2)
 	}
 }
+
+func TestTileCoverReducesDamage(t *testing.T) {
+	b := newBattle()
+	d := b.unit("d1")
+	d.Hp = 200
+	b.Tiles = []Tile{{Pos: d.Pos, Type: TileCover}}
+	// dano base 10*(10-2)=80; abrigo ×2/3 = 53.
+	if err := b.Act("a1", nil, "d1"); err != nil {
+		t.Fatalf("Act: %v", err)
+	}
+	if d.Hp != 200-53 {
+		t.Fatalf("abrigo: hp=%d, quero %d", d.Hp, 200-53)
+	}
+}
+
+func TestTileWarpReducesRangedOnly(t *testing.T) {
+	// Atacante à distância (alcance 2) contra alvo na Distorção: dano ×1/2.
+	b := newBattle()
+	d := b.unit("d1")
+	d.Hp = 200
+	b.Tiles = []Tile{{Pos: d.Pos, Type: TileWarp}}
+	b.unit("a1").Range = 2
+	if err := b.Act("a1", nil, "d1"); err != nil {
+		t.Fatalf("Act: %v", err)
+	}
+	if d.Hp != 200-40 {
+		t.Fatalf("distorção (ranged): hp=%d, quero %d", d.Hp, 200-40)
+	}
+
+	// Corpo-a-corpo (alcance 1) NÃO é afetado pela Distorção.
+	b2 := newBattle()
+	d2 := b2.unit("d1")
+	d2.Hp = 200
+	b2.Tiles = []Tile{{Pos: d2.Pos, Type: TileWarp}}
+	if err := b2.Act("a1", nil, "d1"); err != nil {
+		t.Fatalf("Act: %v", err)
+	}
+	if d2.Hp != 200-80 {
+		t.Fatalf("distorção (melee): hp=%d, quero %d", d2.Hp, 200-80)
+	}
+}
+
+func TestTileHazardDamagesOnEnter(t *testing.T) {
+	b := newBattle()
+	a := b.unit("a1") // hp 300
+	b.Tiles = []Tile{{Pos: Hex{0, 1}, Type: TileHazard}}
+	// Move para a fenda (distância 1): dano = ceil(300/10) = 30.
+	if err := b.Act("a1", &Hex{0, 1}, ""); err != nil {
+		t.Fatalf("Act: %v", err)
+	}
+	if a.Hp != 300-30 {
+		t.Fatalf("fenda: hp=%d, quero %d", a.Hp, 300-30)
+	}
+	if a.Pos != (Hex{0, 1}) {
+		t.Fatalf("deveria ter movido para a fenda: %+v", a.Pos)
+	}
+}

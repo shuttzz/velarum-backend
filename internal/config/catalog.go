@@ -61,6 +61,9 @@ type CatalogPayload struct {
 func Catalog() CatalogPayload {
 	buildings := make([]CatalogBuilding, 0, len(Era1Buildings))
 	for _, d := range Era1Buildings {
+		if !d.Implemented {
+			continue // edifícios ainda-placeholder ficam fora do catálogo (não construíveis)
+		}
 		w, h := d.Footprint()
 		reqs := make([]CatalogRequirement, 0, len(d.Requires))
 		for _, r := range d.Requires {

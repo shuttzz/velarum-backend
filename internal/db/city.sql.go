@@ -365,3 +365,26 @@ func (q *Queries) UpdateCityResources(ctx context.Context, arg UpdateCityResourc
 	)
 	return err
 }
+
+const updateCityStorageCaps = `-- name: UpdateCityStorageCaps :exec
+UPDATE cities SET
+    matter_cap = $2, energy_cap = $3, knowledge_cap = $4
+WHERE id = $1
+`
+
+type UpdateCityStorageCapsParams struct {
+	ID           pgtype.UUID `json:"id"`
+	MatterCap    float64     `json:"matter_cap"`
+	EnergyCap    float64     `json:"energy_cap"`
+	KnowledgeCap float64     `json:"knowledge_cap"`
+}
+
+func (q *Queries) UpdateCityStorageCaps(ctx context.Context, arg UpdateCityStorageCapsParams) error {
+	_, err := q.db.Exec(ctx, updateCityStorageCaps,
+		arg.ID,
+		arg.MatterCap,
+		arg.EnergyCap,
+		arg.KnowledgeCap,
+	)
+	return err
+}

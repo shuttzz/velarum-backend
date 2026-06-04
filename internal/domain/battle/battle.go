@@ -66,17 +66,58 @@ func (u *Unit) Count() int {
 // Alive indica se o stack ainda tem tropas.
 func (u *Unit) Alive() bool { return u.Hp > 0 }
 
+// TileType é o tipo de terreno especial (Lacuna) de uma casa. Casas sem tile são neutras.
+type TileType string
+
+const (
+	// TileCover (Abrigo): a unidade PARADA nesta casa sofre menos dano (CoverReduction).
+	TileCover TileType = "cover"
+	// TileHazard (Fenda instável): a unidade que TERMINA o movimento aqui sofre dano geométrico
+	// (HazardDamagePct do HP atual).
+	TileHazard TileType = "hazard"
+	// TileWarp (Distorção): ataques À DISTÂNCIA (alcance > 1) contra alvo nesta casa têm o dano
+	// reduzido (WarpReductionNum/WarpReductionDen) — "desvio de projétil". Corpo-a-corpo normal.
+	TileWarp TileType = "warp"
+)
+
+// Constantes de efeito dos tiles (determinísticas, sem aleatoriedade).
+const (
+	coverNum     = 2 // Abrigo: dano × 2/3 (−33%)
+	coverDen     = 3
+	warpNum      = 1 // Distorção: dano à distância × 1/2 (−50%)
+	warpDen      = 2
+	hazardPctNum = 1 // Fenda: dano = ~1/10 do HP atual (arredonda p/ cima), nunca abaixo de 1
+	hazardPctDen = 10
+)
+
+// Tile é uma casa de terreno especial (Lacuna) no tabuleiro.
+type Tile struct {
+	Pos  Hex      `json:"pos"`
+	Type TileType `json:"type"`
+}
+
 // Battle é o estado completo de uma batalha (serializável).
 type Battle struct {
 	W         int             `json:"w"`
 	H         int             `json:"h"`
 	Units     []*Unit         `json:"units"`
+	Tiles     []Tile          `json:"tiles"`
 	Turn      Side            `json:"turn"`
 	Round     int             `json:"round"`
 	MaxRounds int             `json:"max_rounds"`
 	Acted     map[string]bool `json:"acted"`
 	Over      bool            `json:"over"`
 	Winner    Side            `json:"winner"`
+}
+
+// tileAt retorna o tipo de tile na casa h (e true) ou ("", false) se a casa é neutra.
+func (b *Battle) tileAt(h Hex) (TileType, bool) {
+	for _, t := range b.Tiles {
+		if t.Pos == h {
+			return t.Type, true
+		}
+	}
+	return "", false
 }
 
 // Act executa a ação de uma unidade do lado atual: mover (opcional) e/ou atacar (opcional).
@@ -120,10 +161,24 @@ func (b *Battle) Act(unitID string, moveTo *Hex, targetID string) error {
 		if Distance(pos, t.Pos) > u.Range {
 			return ErrOutOfRange
 		}
-		dealDamage(u, t)
+		b.applyDamage(u, t)
 	}
 
+	moved := moveTo != nil && *moveTo != u.Pos
 	u.Pos = pos
+	// Fenda instável: terminar o movimento numa casa de hazard causa dano geométrico.
+	if moved {
+		if tt, ok := b.tileAt(pos); ok && tt == TileHazard {
+			dmg := (u.Hp*hazardPctNum + hazardPctDen - 1) / hazardPctDen // ceil(hp/10)
+			if dmg < 1 {
+				dmg = 1
+			}
+			u.Hp -= dmg
+			if u.Hp < 0 {
+				u.Hp = 0
+			}
+		}
+	}
 	if b.Acted == nil {
 		b.Acted = map[string]bool{}
 	}
@@ -183,12 +238,29 @@ func (b *Battle) AITurn() {
 
 // --- internos ---
 
-func dealDamage(att, def *Unit) {
+// applyDamage calcula e aplica o dano de att em def, considerando os tiles de Lacuna sob o
+// alvo: Distorção (reduz ataque à distância) e Abrigo (reduz qualquer dano).
+func (b *Battle) applyDamage(att, def *Unit) {
 	per := att.Attack - def.Defense
 	if per < 1 {
 		per = 1
 	}
-	def.Hp -= att.Count() * per
+	dmg := att.Count() * per
+
+	tt, hasTile := b.tileAt(def.Pos)
+	// Distorção: "desvio de projétil" — só afeta ataques à distância (alcance > 1).
+	if hasTile && tt == TileWarp && att.Range > 1 {
+		dmg = dmg * warpNum / warpDen
+	}
+	// Abrigo: cobertura defensiva — reduz qualquer dano recebido.
+	if hasTile && tt == TileCover {
+		dmg = dmg * coverNum / coverDen
+	}
+	if dmg < 1 {
+		dmg = 1
+	}
+
+	def.Hp -= dmg
 	if def.Hp < 0 {
 		def.Hp = 0
 	}

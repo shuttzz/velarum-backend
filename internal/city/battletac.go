@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"math/rand"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -77,7 +79,55 @@ func buildBattle(troops map[string]int, prov db.Province) *battle.Battle {
 		Pos: battle.Hex{Q: battleW - 1, R: battleH / 2},
 	})
 
-	return &battle.Battle{W: battleW, H: battleH, Turn: battle.Attacker, MaxRounds: battleMaxRounds, Acted: map[string]bool{}, Units: units}
+	occupied := make([]battle.Hex, 0, len(units))
+	for _, u := range units {
+		occupied = append(occupied, u.Pos)
+	}
+	tiles := tilesForProvince(db.UUIDString(prov.ID), occupied)
+	return &battle.Battle{W: battleW, H: battleH, Turn: battle.Attacker, MaxRounds: battleMaxRounds, Acted: map[string]bool{}, Units: units, Tiles: tiles}
+}
+
+// Composição fixa dos tiles de Lacuna (2 de cada tipo); só as POSIÇÕES variam por província.
+var battleTileTypes = []battle.TileType{
+	battle.TileCover, battle.TileCover,
+	battle.TileHazard, battle.TileHazard,
+	battle.TileWarp, battle.TileWarp,
+}
+
+// tilesForProvince gera o layout de Lacuna de forma DETERMINÍSTICA a partir do id da província
+// (seed = hash do UUID): mesma província → mesmo layout, sempre reproduzível/auditável (casa com
+// o "seed persistido" do GDD §9), mas cada província tem um layout próprio e espalhado. As casas
+// ficam nas colunas internas (1..W-2), evitando os spawns (atacante em q=0, defensor em q=W-1), e
+// `occupied` (posições de unidades) é excluído — NENHUM tile nasce sob uma unidade (em especial a
+// Fenda, que causa dano).
+func tilesForProvince(provID string, occupied []battle.Hex) []battle.Tile {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(provID))
+	rng := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec // seed determinística, não-cripto
+
+	taken := make(map[battle.Hex]bool, len(occupied))
+	for _, p := range occupied {
+		taken[p] = true
+	}
+	cand := make([]battle.Hex, 0, (battleW-2)*battleH)
+	for q := 1; q < battleW-1; q++ {
+		for r := 0; r < battleH; r++ {
+			if hx := (battle.Hex{Q: q, R: r}); !taken[hx] {
+				cand = append(cand, hx)
+			}
+		}
+	}
+	rng.Shuffle(len(cand), func(i, j int) { cand[i], cand[j] = cand[j], cand[i] })
+
+	n := len(battleTileTypes)
+	if n > len(cand) {
+		n = len(cand)
+	}
+	tiles := make([]battle.Tile, n)
+	for i := 0; i < n; i++ {
+		tiles[i] = battle.Tile{Pos: cand[i], Type: battleTileTypes[i]}
+	}
+	return tiles
 }
 
 // StartBattle inicia uma batalha tática instanciada contra a província, comprometendo `troops`

@@ -13,7 +13,7 @@ import (
 // Coords são do mundo (tratadas como hex axial no render).
 
 const (
-	regionSpawnRadius = 14 // raio (hexes) em que as cidades se espalham dentro da região (tunável)
+	regionSpawnRadius = 8  // raio (hexes) em que as cidades se espalham dentro da região (tunável)
 	citySpacing       = 3  // distância mínima (hex) entre cidades
 	RegionCapacity    = 25 // teto de cidades por região antes de começar a povoar a próxima (tunável)
 )
@@ -25,13 +25,14 @@ type Region struct {
 	CenterY int
 }
 
-// WorldRegions: 4 quadrantes, centros nos cantos de um mundo quadrado (~70 de meia-largura).
+// WorldRegions: 4 quadrantes, centros nos cantos de um mundo quadrado (~35 de meia-largura — mundo
+// COMPACTO para o pan travar visivelmente perto do conteúdo; cresce conforme as regiões enchem).
 // A ORDEM define a sequência de preenchimento.
 var WorldRegions = []Region{
-	{Key: "campos_da_aurora", CenterX: 70, CenterY: 70},
-	{Key: "ermo_cinereo", CenterX: -70, CenterY: 70},
-	{Key: "litoral_partido", CenterX: -70, CenterY: -70},
-	{Key: "planalto_runico", CenterX: 70, CenterY: -70},
+	{Key: "campos_da_aurora", CenterX: 35, CenterY: 35},
+	{Key: "ermo_cinereo", CenterX: -35, CenterY: 35},
+	{Key: "litoral_partido", CenterX: -35, CenterY: -35},
+	{Key: "planalto_runico", CenterX: 35, CenterY: -35},
 }
 
 // PlaceNewCity escolhe a região de spawn (preenchimento sequencial até RegionCapacity) e um ponto

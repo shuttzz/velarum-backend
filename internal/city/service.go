@@ -48,8 +48,9 @@ type City struct {
 	Pending   []PendingBuild   `json:"pending"`
 	Troops    []Troop          `json:"troops"`
 	Recruits  []RecruitQueued  `json:"recruits"`
-	ArmyCap   int              `json:"army_cap"`
-	Marches   []March          `json:"marches"`
+	ArmyCap      int          `json:"army_cap"`
+	Marches      []March      `json:"marches"`
+	WorldMarches []WorldMarch `json:"world_marches"` // marchas a nós do mundo compartilhado (SW2)
 	// ActiveBattleID é o id da batalha tática em andamento (vazio se nenhuma) — permite
 	// ao frontend retomar/abrir a tela de batalha ao carregar a cidade.
 	ActiveBattleID string    `json:"active_battle_id"`
@@ -319,6 +320,13 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	for _, m := range marches {
 		c.Marches = append(c.Marches, marchToDomain(m))
 	}
+	worldMarches, err := s.q.ListActiveWorldMarches(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, m := range worldMarches {
+		c.WorldMarches = append(c.WorldMarches, worldMarchToDomain(m))
+	}
 	if bat, err := s.q.GetActiveBattle(ctx, id); err == nil {
 		c.ActiveBattleID = db.UUIDString(bat.ID)
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -361,7 +369,7 @@ func toDomainCity(c db.City, now time.Time) City {
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
 		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},
-		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, ServerNow: now,
+		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, WorldMarches: []WorldMarch{}, ServerNow: now,
 	}
 }
 

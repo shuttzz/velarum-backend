@@ -208,12 +208,55 @@ CREATE TABLE scheduled_events (
 );
 CREATE INDEX idx_scheduled_events_due ON scheduled_events (fires_at) WHERE status = 'pending';
 
+-- Alvos PvE do MUNDO COMPARTILHADO (tiles que todos veem). SW2: 'node' = nó de recurso
+-- (coleta ao longo do tempo, estilo RoK). Futuro: 'village'/'creature' (combate one-shot).
+-- 1 ocupante por vez (occupied_by aponta a world_march que está coletando). Coords são do mundo.
+CREATE TABLE world_targets (
+    id               UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id         UUID NOT NULL REFERENCES worlds(id),
+    kind             TEXT NOT NULL,                       -- node | village | creature
+    resource         TEXT NOT NULL,                       -- matter | energy | knowledge (o que o nó rende)
+    level            INTEGER NOT NULL,
+    coord_x          INTEGER NOT NULL,
+    coord_y          INTEGER NOT NULL,
+    amount_total     DOUBLE PRECISION NOT NULL,           -- capacidade no spawn (cresce com o nível)
+    amount_remaining DOUBLE PRECISION NOT NULL,           -- restante (depleção PARCIAL)
+    status           TEXT NOT NULL DEFAULT 'idle',        -- idle | occupied | depleted
+    occupied_by      UUID,                                -- world_march coletando agora (lock de 1 ocupante)
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (world_id, coord_x, coord_y)
+);
+CREATE INDEX idx_world_targets_world ON world_targets (world_id) WHERE status <> 'depleted';
+
+-- Marchas a alvos do mundo compartilhado (SW2). Distintas de `marches` (províncias privadas):
+-- ida → coleta (timer ∝ carga÷taxa) → volta com loot. Espelhadas em scheduled_events
+-- (world.arrival / world.collect / world.return).
+CREATE TABLE world_marches (
+    id            UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id      UUID NOT NULL REFERENCES worlds(id),
+    city_id       UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    target_id     UUID NOT NULL REFERENCES world_targets(id),
+    troops        JSONB NOT NULL,                         -- {unit_type: count} enviado
+    survivors     JSONB,                                  -- {unit_type: count} que volta (= enviado, sem batalha no SW2a)
+    loot          JSONB,                                  -- recurso coletado (resource.Amounts; vazio se bounce)
+    status        TEXT NOT NULL DEFAULT 'outbound',       -- outbound | collecting | returning | done
+    depart_at     TIMESTAMPTZ NOT NULL,
+    arrive_at     TIMESTAMPTZ NOT NULL,                   -- chegada ao nó
+    collect_until TIMESTAMPTZ,                            -- fim da coleta
+    return_at     TIMESTAMPTZ,                            -- chegada de volta à cidade
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_world_marches_active ON world_marches (city_id) WHERE status <> 'done';
+CREATE INDEX idx_world_marches_target ON world_marches (target_id) WHERE status <> 'done';
+
 -- Mundo padrão (compartilhado) com UUID FIXO conhecido — os jogadores entram nele ao se
 -- registrarem/logarem. Mais mundos/temporadas virão depois (matchmaking dedicado).
 INSERT INTO worlds (id, name, speed, status)
 VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
+DROP TABLE IF EXISTS world_marches;
+DROP TABLE IF EXISTS world_targets;
 DROP TABLE IF EXISTS scheduled_events;
 DROP TABLE IF EXISTS battles;
 DROP TABLE IF EXISTS reports;

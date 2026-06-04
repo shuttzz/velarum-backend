@@ -18,6 +18,7 @@ type Querier interface {
 	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CountPlayerProvinces(ctx context.Context, playerID pgtype.UUID) (int64, error)
+	CountWorldTargets(ctx context.Context, worldID pgtype.UUID) (int64, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateCity(ctx context.Context, arg CreateCityParams) (City, error)
 	CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error)
@@ -46,6 +47,8 @@ type Querier interface {
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
 	GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error)
+	GetWorldMarchForUpdate(ctx context.Context, id pgtype.UUID) (WorldMarch, error)
+	GetWorldTargetForUpdate(ctx context.Context, id pgtype.UUID) (WorldTarget, error)
 	InsertBattle(ctx context.Context, arg InsertBattleParams) (Battle, error)
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
@@ -54,7 +57,10 @@ type Querier interface {
 	InsertRecruitQueue(ctx context.Context, arg InsertRecruitQueueParams) (RecruitQueue, error)
 	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
+	InsertWorldMarch(ctx context.Context, arg InsertWorldMarchParams) (WorldMarch, error)
+	InsertWorldTarget(ctx context.Context, arg InsertWorldTargetParams) (WorldTarget, error)
 	ListActiveMarches(ctx context.Context, cityID pgtype.UUID) ([]March, error)
+	ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID) ([]WorldMarch, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
 	ListCityTroops(ctx context.Context, cityID pgtype.UUID) ([]CityTroop, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
@@ -63,13 +69,23 @@ type Querier interface {
 	ListPlayerReports(ctx context.Context, playerID pgtype.UUID) ([]Report, error)
 	ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCitiesRow, error)
 	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
+	ListWorldTargets(ctx context.Context, worldID pgtype.UUID) ([]WorldTarget, error)
 	MarkAllReportsRead(ctx context.Context, playerID pgtype.UUID) error
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
 	MoveCityBuilding(ctx context.Context, arg MoveCityBuildingParams) error
+	// Libera a ocupação ao fim da coleta (nó ainda tem recurso).
+	ReleaseWorldTarget(ctx context.Context, id pgtype.UUID) error
+	// Reserva o nó para coleta: decrementa o restante e trava 1 ocupante (occupied_by = world_march).
+	ReserveWorldTarget(ctx context.Context, arg ReserveWorldTargetParams) error
+	// Nó zerou → respawna na MESMA linha em outro lugar (novas coords/nível/recurso/quantidade cheia).
+	RespawnWorldTarget(ctx context.Context, arg RespawnWorldTargetParams) error
 	SetCityBuildingLevel(ctx context.Context, arg SetCityBuildingLevelParams) error
 	SetMarchDone(ctx context.Context, id pgtype.UUID) error
 	SetMarchResult(ctx context.Context, arg SetMarchResultParams) error
 	SetProvinceConquered(ctx context.Context, arg SetProvinceConqueredParams) error
+	SetWorldMarchCollecting(ctx context.Context, arg SetWorldMarchCollectingParams) error
+	SetWorldMarchDone(ctx context.Context, id pgtype.UUID) error
+	SetWorldMarchReturning(ctx context.Context, arg SetWorldMarchReturningParams) error
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error

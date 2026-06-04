@@ -178,12 +178,12 @@ func (s *Service) StartMarch(ctx context.Context, cityID, provinceID string, tro
 		return March{}, ErrProvinceConquered
 	}
 
-	// Fila de marcha: nº de marchas ativas (ida/volta) limitado por era (mesma tabela da obra).
-	active, err := q.ListActiveMarches(ctx, id)
+	// Fila de expedições (províncias + nós do mundo) limitada por era — todas na mesma lane.
+	n, err := activeExpeditions(ctx, q, id)
 	if err != nil {
 		return March{}, err
 	}
-	if len(active) >= config.QueuesForEra(int(cityRow.Era)) {
+	if n >= config.QueuesForEra(int(cityRow.Era)) {
 		return March{}, ErrQueueFull
 	}
 

@@ -84,6 +84,15 @@ func main() {
 	sch.Handle(city.EventTroopReturn, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.ResolveReturnEvent(ctx, e.Payload, time.Now().UTC())
 	})
+	sch.Handle(city.EventWorldArrival, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveWorldArrivalEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventWorldCollect, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveWorldCollectEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventWorldReturn, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveWorldReturnEvent(ctx, e.Payload, time.Now().UTC())
+	})
 	go sch.Run(ctx)
 
 	mux := http.NewServeMux()
@@ -104,6 +113,16 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, cities)
+	}))
+
+	// Alvos PvE do mundo COMPARTILHADO (nós de recurso — SW2). Protegida (basta estar logado).
+	mux.HandleFunc("GET /world/targets", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		targets, err := citySvc.WorldTargets(r.Context(), time.Now().UTC())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, targets)
 	}))
 
 	mux.HandleFunc("POST /auth/register", func(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +310,24 @@ func main() {
 		writeJSON(w, http.StatusAccepted, m)
 	}))
 
+	// Coletar num nó do mundo compartilhado (SW2): envia tropas → coleta por tempo → volta com loot.
+	mux.HandleFunc("POST /cities/{id}/collect", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TargetID string         `json:"target_id"`
+			Troops   map[string]int `json:"troops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		m, err := citySvc.StartCollect(r.Context(), r.PathValue("id"), body.TargetID, body.Troops, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForCollectErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, m)
+	}))
+
 	mux.HandleFunc("POST /cities/{id}/provinces/{pid}/battle", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Troops map[string]int `json:"troops"`
@@ -421,6 +458,20 @@ func statusForMarchErr(err error) int {
 	}
 }
 
+func statusForCollectErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrTargetNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrTargetDepleted), errors.Is(err, city.ErrNoTroops),
+		errors.Is(err, city.ErrQueueFull):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func statusForBattleErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
@@ -535,6 +586,10 @@ func codeFor(err error) string {
 		return "battle_not_found"
 	case errors.Is(err, city.ErrInvalidAction):
 		return "invalid_action"
+	case errors.Is(err, city.ErrTargetNotFound):
+		return "target_not_found"
+	case errors.Is(err, city.ErrTargetDepleted):
+		return "target_depleted"
 	default:
 		return "internal"
 	}

@@ -69,13 +69,13 @@ func TestUpgradeEMoveFlow_Integration(t *testing.T) {
 		t.Fatalf("esperava ErrBuildingNotFound, obtive %v", err)
 	}
 
-	// Conclui o upgrade: Viveiro nível 2 produz 12/h.
+	// Conclui o upgrade: Viveiro nível 2 produz floor(20×1.55) = 31/h.
 	if err := svc.CompleteBuild(ctx, up.ID, up.FinishAt); err != nil {
 		t.Fatalf("CompleteBuild (upgrade): %v", err)
 	}
 	after, _ := svc.LoadCity(ctx, c.ID, up.FinishAt)
-	if after.Rate.Matter != 12 {
-		t.Fatalf("produção após upgrade = %v, quero 12", after.Rate.Matter)
+	if after.Rate.Matter != 31 {
+		t.Fatalf("produção após upgrade = %v, quero 31", after.Rate.Matter)
 	}
 
 	// Mover o Viveiro de (0,0) para (1,1) — válido.

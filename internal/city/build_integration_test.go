@@ -59,8 +59,8 @@ func TestBuildFlow_Integration(t *testing.T) {
 		t.Fatalf("CompleteBuild: %v", err)
 	}
 	done, _ := svc.LoadCity(ctx, c.ID, bq.FinishAt)
-	if done.Rate.Matter != 8 {
-		t.Fatalf("produção após conclusão = %v, quero 8", done.Rate.Matter)
+	if done.Rate.Matter != 20 {
+		t.Fatalf("produção após conclusão = %v, quero 20", done.Rate.Matter)
 	}
 	if len(done.Buildings) != 2 {
 		t.Fatalf("edifícios = %d, quero 2 (Lar do Clã + Viveiro)", len(done.Buildings))
@@ -69,10 +69,10 @@ func TestBuildFlow_Integration(t *testing.T) {
 		t.Fatalf("pendências deveriam estar vazias após conclusão, got %d", len(done.Pending))
 	}
 
-	// Recursos sobem: 2h após a conclusão, 450 + 8*2 = 466.
+	// Recursos sobem: 2h após a conclusão, 450 + 20*2 = 490.
 	later, _ := svc.LoadCity(ctx, c.ID, bq.FinishAt.Add(2*time.Hour))
-	if later.Resources.Matter != 466 {
-		t.Fatalf("Matéria 2h após conclusão = %v, quero 466", later.Resources.Matter)
+	if later.Resources.Matter != 490 {
+		t.Fatalf("Matéria 2h após conclusão = %v, quero 490", later.Resources.Matter)
 	}
 
 	// Idempotência: concluir de novo não altera nada.
@@ -80,7 +80,7 @@ func TestBuildFlow_Integration(t *testing.T) {
 		t.Fatalf("CompleteBuild (idempotente): %v", err)
 	}
 	again, _ := svc.LoadCity(ctx, c.ID, bq.FinishAt.Add(2*time.Hour))
-	if again.Resources.Matter != 466 {
-		t.Fatalf("idempotência quebrada: Matéria = %v, quero 466", again.Resources.Matter)
+	if again.Resources.Matter != 490 {
+		t.Fatalf("idempotência quebrada: Matéria = %v, quero 490", again.Resources.Matter)
 	}
 }

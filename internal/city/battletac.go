@@ -64,20 +64,42 @@ func buildBattle(troops map[string]int, prov db.Province) *battle.Battle {
 		}
 	}
 
-	defHp := int(prov.DefHp)
-	count := (defHp + defenderHpPer - 1) / defenderHpPer
-	if count < 1 {
-		count = 1
+	// Defensor: tropas REAIS da composição da província (≥1 tipo), na coluna oposta (q = W-1),
+	// espalhadas nas linhas. Cada DefStack vira um stack próprio (lanceiro melee, arqueiro à distância).
+	if tpl, ok := config.ProvinceByKey(prov.NameKey); ok {
+		dr := 1
+		for _, ds := range tpl.Defense {
+			ud, ok := config.UnitByKey(ds.Unit)
+			if !ok || ds.Count <= 0 {
+				continue
+			}
+			units = append(units, &battle.Unit{
+				ID: "d:" + ds.Unit, Owner: battle.Defender, Key: ds.Unit,
+				Hp: ds.Count * ud.HP, HpPer: ud.HP, Attack: ud.Attack, Defense: ud.Defense,
+				Move: ud.Move, Range: ud.Range, Pos: battle.Hex{Q: battleW - 1, R: dr},
+			})
+			dr += 2
+			if dr >= battleH {
+				dr = battleH - 1
+			}
+		}
+	} else {
+		// Fallback (província fora do config): 1 guarda derivado do agregado def_hp/def_attack.
+		defHp := int(prov.DefHp)
+		count := (defHp + defenderHpPer - 1) / defenderHpPer
+		if count < 1 {
+			count = 1
+		}
+		atk := int(prov.DefAttack) / count
+		if atk < 1 {
+			atk = 1
+		}
+		units = append(units, &battle.Unit{
+			ID: "d:0", Owner: battle.Defender, Key: "guarda",
+			Hp: defHp, HpPer: defenderHpPer, Attack: atk, Defense: 2, Move: 1, Range: 1,
+			Pos: battle.Hex{Q: battleW - 1, R: battleH / 2},
+		})
 	}
-	atk := int(prov.DefAttack) / count
-	if atk < 1 {
-		atk = 1
-	}
-	units = append(units, &battle.Unit{
-		ID: "d:0", Owner: battle.Defender, Key: "guarda",
-		Hp: defHp, HpPer: defenderHpPer, Attack: atk, Defense: 2, Move: 1, Range: 1,
-		Pos: battle.Hex{Q: battleW - 1, R: battleH / 2},
-	})
 
 	occupied := make([]battle.Hex, 0, len(units))
 	for _, u := range units {
@@ -347,6 +369,10 @@ func (s *Service) resolveBattle(ctx context.Context, q *db.Queries, row db.Battl
 			ID: row.CityID, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,
 			MatterRate: cityRow.MatterRate, EnergyRate: cityRow.EnergyRate, KnowledgeRate: cityRow.KnowledgeRate, ResourcesUpdatedAt: now,
 		}); err != nil {
+			return err
+		}
+		// Recalcula a produção: a província conquistada passa a render seu depósito passivo.
+		if err := recomputeProduction(ctx, q, row.CityID, now); err != nil {
 			return err
 		}
 	}

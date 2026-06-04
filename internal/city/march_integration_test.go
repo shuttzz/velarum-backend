@@ -43,7 +43,13 @@ func TestMarchFlow_Integration(t *testing.T) {
 	if len(provs) != 6 {
 		t.Fatalf("esperava 6 províncias no anel 1, veio %d", len(provs))
 	}
+	// Escolhe a MAIS FRACA (menor DefHP) — 20 lanceiros vencem com folga e o resultado é estável.
 	target := provs[0]
+	for _, p := range provs {
+		if p.DefHP < target.DefHP {
+			target = p
+		}
+	}
 	if target.Status != "unconquered" {
 		t.Fatalf("província deveria começar não conquistada: %+v", target)
 	}
@@ -111,8 +117,9 @@ func TestMarchFlow_Integration(t *testing.T) {
 		t.Fatalf("ResolveReturn: %v", err)
 	}
 	loaded, _ = svc.LoadCity(ctx, c.ID, returnAt)
-	if len(loaded.Troops) != 1 || loaded.Troops[0].Count != 20 {
-		t.Fatalf("sobreviventes deveriam voltar à guarnição (20 lanceiros): %+v", loaded.Troops)
+	// Sobreviventes voltam à guarnição (a defesa real causa algumas baixas, então 0 < n ≤ 20).
+	if len(loaded.Troops) != 1 || loaded.Troops[0].UnitType != "lanceiro" || loaded.Troops[0].Count <= 0 || loaded.Troops[0].Count > 20 {
+		t.Fatalf("sobreviventes deveriam voltar à guarnição (1..20 lanceiros): %+v", loaded.Troops)
 	}
 	if len(loaded.Marches) != 0 {
 		t.Fatalf("marcha deveria estar encerrada (done): %+v", loaded.Marches)

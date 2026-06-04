@@ -413,6 +413,21 @@ func recomputeProduction(ctx context.Context, q *db.Queries, cityID pgtype.UUID,
 			protectedCap += config.StorageCapFor(int(b.Level))
 		}
 	}
+	// Depósito passivo das províncias conquistadas (GDD §8): soma o Deposit/hora de cada uma à produção.
+	provs, err := q.ListPlayerProvinces(ctx, cityRow.PlayerID)
+	if err != nil {
+		return err
+	}
+	for _, p := range provs {
+		if p.Status != "conquered" {
+			continue
+		}
+		if tpl, ok := config.ProvinceByKey(p.NameKey); ok {
+			rate.Matter += tpl.Deposit.Matter
+			rate.Energy += tpl.Deposit.Energy
+			rate.Knowledge += tpl.Deposit.Knowledge
+		}
+	}
 	cur := stateFromRow(cityRow).At(now)
 	if err := q.UpdateCityResources(ctx, db.UpdateCityResourcesParams{
 		ID: cityID, MatterStored: cur.Matter, EnergyStored: cur.Energy, KnowledgeStored: cur.Knowledge,

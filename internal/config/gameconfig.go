@@ -123,9 +123,9 @@ type BuildingDef struct {
 // Tempos baixos no início (1º build ~5s), seguindo o padrão do gênero.
 var Era1Buildings = []BuildingDef{
 	{Key: "lar_do_cla", Name: "Lar do Clã", Category: "central", BaseCost: resource.Amounts{Matter: 120, Energy: 60, Knowledge: 30}, BaseTime: 30, MaxCopies: 1, Era: 1, Implemented: true},
-	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 8, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
-	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 6, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
-	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 3, BaseCost: resource.Amounts{Matter: 60, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1, Implemented: true},
+	{Key: "viveiro_de_pedra", Name: "Viveiro de Pedra", Category: "production", Produces: "matter", BaseRate: 20, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
+	{Key: "fogueira_comunal", Name: "Fogueira Comunal", Category: "production", Produces: "energy", BaseRate: 15, BaseCost: resource.Amounts{Matter: 50, Energy: 20}, BaseTime: 5, MaxCopies: 3, Era: 1, Implemented: true},
+	{Key: "pedra_da_memoria", Name: "Pedra da Memória", Category: "production", Produces: "knowledge", BaseRate: 8, BaseCost: resource.Amounts{Matter: 60, Energy: 40}, BaseTime: 8, MaxCopies: 2, Era: 1, Implemented: true},
 	{Key: "celeiro_de_argila", Name: "Celeiro de Argila", Category: "storage", BaseCost: resource.Amounts{Matter: 80, Energy: 40}, BaseTime: 8, MaxCopies: 1, Era: 1, Implemented: true},
 	{Key: "canteiro_de_almas", Name: "Canteiro de Almas", Category: "military", BaseCost: resource.Amounts{Matter: 120, Energy: 80, Knowledge: 20}, BaseTime: 15, MaxCopies: 1, Era: 1, Implemented: true},
 	{Key: "altar_das_fogueiras", Name: "Altar das Fogueiras", Category: "culture", BaseCost: resource.Amounts{Matter: 70, Energy: 80, Knowledge: 30}, BaseTime: 60, MaxCopies: 1, Era: 1, Requires: []Requirement{{"fogueira_comunal", 2}}},

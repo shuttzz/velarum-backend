@@ -42,6 +42,7 @@ type Province struct {
 	DefAttack int              `json:"def_attack"`
 	DefHP     int              `json:"def_hp"`
 	Reward    resource.Amounts `json:"reward"`
+	Deposit   resource.Amounts `json:"deposit"` // renda passiva/hora se mantida (vem do config)
 	Status    string           `json:"status"`
 }
 
@@ -109,9 +110,10 @@ func (s *Service) ensureProvinces(ctx context.Context, cityRow db.City) error {
 		return tx.Commit(ctx) // outra requisição gerou
 	}
 	for _, t := range config.Era1Provinces {
+		defAtk, defHP := t.DefenseAggregate() // agregado da composição de tropas (auto-resolve/exibição)
 		if _, err := q.InsertProvince(ctx, db.InsertProvinceParams{
 			WorldID: cityRow.WorldID, PlayerID: cityRow.PlayerID, NameKey: t.NameKey,
-			Q: int32(t.Q), R: int32(t.R), Ring: int16(t.Ring), DefAttack: int32(t.DefAttack), DefHp: int32(t.DefHP),
+			Q: int32(t.Q), R: int32(t.R), Ring: int16(t.Ring), DefAttack: int32(defAtk), DefHp: int32(defHP),
 			RewardMatter: t.Reward.Matter, RewardEnergy: t.Reward.Energy, RewardKnowledge: t.Reward.Knowledge,
 		}); err != nil {
 			return fmt.Errorf("gerar província: %w", err)
@@ -280,6 +282,10 @@ func (s *Service) ResolveArrival(ctx context.Context, marchID string, now time.T
 		}); err != nil {
 			return err
 		}
+		// Recalcula a produção: a província conquistada passa a render seu depósito passivo.
+		if err := recomputeProduction(ctx, q, m.CityID, now); err != nil {
+			return err
+		}
 	}
 
 	won := out.AttackerWins
@@ -353,11 +359,16 @@ func (s *Service) ResolveReturn(ctx context.Context, marchID string, now time.Ti
 }
 
 func provinceToDomain(p db.Province) Province {
+	dep := resource.Amounts{}
+	if tpl, ok := config.ProvinceByKey(p.NameKey); ok {
+		dep = tpl.Deposit
+	}
 	return Province{
 		ID: db.UUIDString(p.ID), NameKey: p.NameKey, Q: int(p.Q), R: int(p.R), Ring: int(p.Ring),
 		DefAttack: int(p.DefAttack), DefHP: int(p.DefHp),
-		Reward: resource.Amounts{Matter: p.RewardMatter, Energy: p.RewardEnergy, Knowledge: p.RewardKnowledge},
-		Status: p.Status,
+		Reward:  resource.Amounts{Matter: p.RewardMatter, Energy: p.RewardEnergy, Knowledge: p.RewardKnowledge},
+		Deposit: dep,
+		Status:  p.Status,
 	}
 }
 

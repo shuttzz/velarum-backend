@@ -1,10 +1,40 @@
 package config
 
-import "backend/internal/domain/resource"
+import (
+	"math"
+	"math/rand"
 
-// ProvinceMarchSecondsPerRing é o tempo de marcha (em segundos) por anel de distância,
-// para CADA trecho (ida e volta são separados). Anel 1 = 60s de ida + 60s de volta.
-const ProvinceMarchSecondsPerRing = 60
+	"backend/internal/domain/resource"
+)
+
+// MarchSecondsPerHex é o tempo de marcha (segundos) por HEX de distância, em CADA trecho (ida e
+// volta separados). Regiões estão espalhadas pelo mapa; a marcha é proporcional à distância hex
+// real da capital (0,0) → mais longe = expedição mais demorada.
+const MarchSecondsPerHex = 30
+
+// HexDistance é a distância hexagonal (axial) entre (q1,r1) e (q2,r2).
+func HexDistance(q1, r1, q2, r2 int) int {
+	dq := q1 - q2
+	dr := r1 - r2
+	return (abs(q1-q2) + abs(dq+dr) + abs(r1-r2)) / 2
+}
+
+// MarchSecondsTo devolve o tempo de UM trecho de marcha até a região em (q,r), a partir da
+// capital no centro (0,0).
+func MarchSecondsTo(q, r int) int {
+	d := HexDistance(0, 0, q, r)
+	if d < 1 {
+		d = 1
+	}
+	return d * MarchSecondsPerHex
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
 
 // ProvinceTemplate é a definição estática de uma província PvE (mapa instanciado por jogador).
 // A cidade fica no centro (0,0); o anel 1 são os 6 vizinhos hex. NameKey é traduzido no front.
@@ -16,8 +46,7 @@ type DefStack struct {
 
 type ProvinceTemplate struct {
 	NameKey string
-	Q, R    int // coordenada axial hex (cidade = 0,0)
-	Ring    int
+	Ring    int              // faixa/era (1 = Era 1). A posição (q,r) NÃO é fixa — é gerada por seed.
 	Defense []DefStack       // composição de tropas defensoras (≥1 tipo). Auto-resolve usa o agregado.
 	Reward  resource.Amounts // recompensa ÚNICA ao conquistar
 	Deposit resource.Amounts // renda PASSIVA por hora enquanto a província é mantida (GDD §8)
@@ -35,17 +64,18 @@ func (t ProvinceTemplate) DefenseAggregate() (attack, hp int) {
 	return attack, hp
 }
 
-// Era1Provinces: 6 províncias do anel 1 (os 6 vizinhos hex), defesa por TROPAS reais (lanceiros +
-// arqueiros), dificuldade/recompensa crescentes. Vitória no auto-resolve ≈ aggHP×aggAtk ≤ 300×N²
-// (N = lanceiros): a 1ª cai com pelotão pequeno (onboarding), a última exige quase o exército
-// cheio (cap 25 no Canteiro nv1) ou arqueiros. Conquistar dá recompensa única + Deposit/hora.
+// Era1Provinces: 6 províncias da Era 1 (ordem = dificuldade crescente), defesa por TROPAS reais
+// (lanceiros + arqueiros). Vitória no auto-resolve ≈ aggHP×aggAtk ≤ 300×N² (N = lanceiros): a 1ª
+// cai com pelotão pequeno (onboarding), a última exige quase o exército cheio (cap 25) ou
+// arqueiros. Conquistar dá recompensa única + Deposit/hora. A POSIÇÃO no mapa é gerada por SEED
+// do jogador (ver PlaceEra1Provinces) — espalhada e única por jogador, sem geometria fixa.
 var Era1Provinces = []ProvinceTemplate{
-	{NameKey: "clareira_dos_ecos", Q: 1, R: 0, Ring: 1, Defense: []DefStack{{"lanceiro", 6}}, Reward: resource.Amounts{Matter: 120, Energy: 60}, Deposit: resource.Amounts{Matter: 6}},
-	{NameKey: "pedreira_selvagem", Q: 1, R: -1, Ring: 1, Defense: []DefStack{{"lanceiro", 9}, {"arqueiro", 2}}, Reward: resource.Amounts{Matter: 180, Energy: 70, Knowledge: 20}, Deposit: resource.Amounts{Matter: 8, Energy: 3}},
-	{NameKey: "bosque_cinza", Q: 0, R: -1, Ring: 1, Defense: []DefStack{{"lanceiro", 10}, {"arqueiro", 3}}, Reward: resource.Amounts{Matter: 150, Energy: 120, Knowledge: 30}, Deposit: resource.Amounts{Energy: 5, Knowledge: 4}},
-	{NameKey: "ribeira_morta", Q: -1, R: 0, Ring: 1, Defense: []DefStack{{"lanceiro", 13}, {"arqueiro", 4}}, Reward: resource.Amounts{Matter: 200, Energy: 100, Knowledge: 40}, Deposit: resource.Amounts{Matter: 8, Energy: 6, Knowledge: 3}},
-	{NameKey: "colina_dos_vigias", Q: -1, R: 1, Ring: 1, Defense: []DefStack{{"lanceiro", 15}, {"arqueiro", 5}}, Reward: resource.Amounts{Matter: 220, Energy: 140, Knowledge: 50}, Deposit: resource.Amounts{Energy: 10, Knowledge: 6}},
-	{NameKey: "ruina_primeva", Q: 0, R: 1, Ring: 1, Defense: []DefStack{{"lanceiro", 17}, {"arqueiro", 6}}, Reward: resource.Amounts{Matter: 260, Energy: 160, Knowledge: 70}, Deposit: resource.Amounts{Matter: 12, Energy: 10, Knowledge: 8}},
+	{NameKey: "clareira_dos_ecos", Ring: 1, Defense: []DefStack{{"lanceiro", 6}}, Reward: resource.Amounts{Matter: 120, Energy: 60}, Deposit: resource.Amounts{Matter: 6}},
+	{NameKey: "pedreira_selvagem", Ring: 1, Defense: []DefStack{{"lanceiro", 9}, {"arqueiro", 2}}, Reward: resource.Amounts{Matter: 180, Energy: 70, Knowledge: 20}, Deposit: resource.Amounts{Matter: 8, Energy: 3}},
+	{NameKey: "bosque_cinza", Ring: 1, Defense: []DefStack{{"lanceiro", 10}, {"arqueiro", 3}}, Reward: resource.Amounts{Matter: 150, Energy: 120, Knowledge: 30}, Deposit: resource.Amounts{Energy: 5, Knowledge: 4}},
+	{NameKey: "ribeira_morta", Ring: 1, Defense: []DefStack{{"lanceiro", 13}, {"arqueiro", 4}}, Reward: resource.Amounts{Matter: 200, Energy: 100, Knowledge: 40}, Deposit: resource.Amounts{Matter: 8, Energy: 6, Knowledge: 3}},
+	{NameKey: "colina_dos_vigias", Ring: 1, Defense: []DefStack{{"lanceiro", 15}, {"arqueiro", 5}}, Reward: resource.Amounts{Matter: 220, Energy: 140, Knowledge: 50}, Deposit: resource.Amounts{Energy: 10, Knowledge: 6}},
+	{NameKey: "ruina_primeva", Ring: 1, Defense: []DefStack{{"lanceiro", 17}, {"arqueiro", 6}}, Reward: resource.Amounts{Matter: 260, Energy: 160, Knowledge: 70}, Deposit: resource.Amounts{Matter: 12, Energy: 10, Knowledge: 8}},
 }
 
 // ProvinceByKey busca o template de uma província pela NameKey (Era 1).
@@ -56,4 +86,56 @@ func ProvinceByKey(nameKey string) (ProvinceTemplate, bool) {
 		}
 	}
 	return ProvinceTemplate{}, false
+}
+
+// ProvCoord é uma posição axial hex (q,r) gerada para uma província.
+type ProvCoord struct{ Q, R int }
+
+// PlaceEra1Provinces gera, de forma DETERMINÍSTICA a partir de `seed` (hash do jogador), uma
+// posição ESPALHADA para cada província da Era 1 — ângulo aleatório + distância crescente por
+// dificuldade (a 1ª perto da capital, a última longe). Sem geometria fixa: cada jogador tem um
+// layout único e orgânico. Evita repetir hex e a casa da capital (0,0).
+func PlaceEra1Provinces(seed uint64) []ProvCoord {
+	rng := rand.New(rand.NewSource(int64(seed))) //nolint:gosec // seed determinística, não-cripto
+	taken := map[ProvCoord]bool{{Q: 0, R: 0}: true}
+	out := make([]ProvCoord, len(Era1Provinces))
+	for i := range Era1Provinces {
+		minDist := 2.0 + float64(i) // 2,3,4,5,6,7 — dificuldade cresce → mais longe
+		var c ProvCoord
+		for attempt := 0; attempt < 60; attempt++ {
+			dist := minDist + rng.Float64()*1.6
+			ang := rng.Float64() * 2 * math.Pi
+			c = pixelToAxial(dist*math.Cos(ang), dist*math.Sin(ang))
+			if !taken[c] {
+				break
+			}
+		}
+		taken[c] = true
+		out[i] = c
+	}
+	return out
+}
+
+// pixelToAxial converte uma posição em "unidades de hex" (HEX=1, pointy-top) para o hex axial
+// mais próximo (arredondamento cúbico).
+func pixelToAxial(px, py float64) ProvCoord {
+	rf := py / 1.5
+	qf := px/math.Sqrt(3) - rf/2
+	return axialRound(qf, rf)
+}
+
+func axialRound(qf, rf float64) ProvCoord {
+	xs, zs := qf, rf
+	ys := -xs - zs
+	rx, ry, rz := math.Round(xs), math.Round(ys), math.Round(zs)
+	xd, yd, zd := math.Abs(rx-xs), math.Abs(ry-ys), math.Abs(rz-zs)
+	if xd > yd && xd > zd {
+		rx = -ry - rz
+	} else if yd > zd {
+		ry = -rx - rz
+	} else {
+		rz = -rx - ry
+	}
+	_ = ry
+	return ProvCoord{Q: int(rx), R: int(rz)}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -34,6 +35,7 @@ type City struct {
 	ID        string           `json:"id"`
 	PlayerID  string           `json:"player_id"`
 	Name      string           `json:"name"`
+	Region    string           `json:"region"`
 	Era       int              `json:"era"`
 	CoordX    int              `json:"coord_x"`
 	CoordY    int              `json:"coord_y"`
@@ -140,22 +142,26 @@ func (s *Service) EnterWorld(ctx context.Context, accountID, faction, cityName s
 		return City{}, fmt.Errorf("criar jogador: %w", err)
 	}
 
-	// Alocar coordenada livre no mapa do mundo (espiral a partir da origem).
-	coords, err := q.ListWorldCityCoords(ctx, worldUUID)
+	// Posicionar a cidade no MUNDO COMPARTILHADO: preenchimento por região (quadrante) até o teto,
+	// espalhada dentro da região, com espaçamento mínimo de outras cidades.
+	cities, err := q.ListWorldCities(ctx, worldUUID)
 	if err != nil {
-		return City{}, fmt.Errorf("listar coordenadas: %w", err)
+		return City{}, fmt.Errorf("listar cidades: %w", err)
 	}
-	taken := make(map[[2]int]bool, len(coords))
-	for _, c := range coords {
+	taken := make(map[[2]int]bool, len(cities))
+	counts := map[string]int{}
+	for _, c := range cities {
 		taken[[2]int{int(c.CoordX), int(c.CoordY)}] = true
+		counts[c.Region]++
 	}
-	cx, cy := allocateFreeCoord(taken)
+	rng := rand.New(rand.NewSource(now.UnixNano())) //nolint:gosec // placement, não-cripto
+	regionKey, cx, cy := config.PlaceNewCity(rng, counts, taken)
 
 	start := config.StartingResources
 	// Cidade nova começa SEM proteção contra saque (cap 0/0/0). A parcela protegida só passa a
 	// existir após construir o Celeiro de Argila (recomputeProduction recalcula os caps).
 	row, err := q.CreateCity(ctx, db.CreateCityParams{
-		WorldID: worldUUID, PlayerID: player.ID, Name: cityName,
+		WorldID: worldUUID, PlayerID: player.ID, Name: cityName, Region: regionKey,
 		CoordX: int32(cx), CoordY: int32(cy), Era: 1,
 		MatterStored: start.Matter, EnergyStored: start.Energy, KnowledgeStored: start.Knowledge,
 		MatterRate: 0, EnergyRate: 0, KnowledgeRate: 0,
@@ -222,27 +228,34 @@ func (s *Service) OwnerAccountID(ctx context.Context, cityID string) (string, er
 	return db.UUIDString(acc), nil
 }
 
-// allocateFreeCoord acha a primeira célula livre numa espiral quadrada a partir da origem.
-func allocateFreeCoord(taken map[[2]int]bool) (int, int) {
-	x, y := 0, 0
-	if !taken[[2]int{x, y}] {
-		return x, y
+// WorldCity é uma cidade visível no mapa-mundo COMPARTILHADO (posição + dono).
+type WorldCity struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Region   string `json:"region"`
+	CoordX   int    `json:"coord_x"`
+	CoordY   int    `json:"coord_y"`
+	Username string `json:"username"`
+}
+
+// WorldCities lista todas as cidades do mundo padrão (compartilhado) — o mapa mostra os vizinhos.
+func (s *Service) WorldCities(ctx context.Context) ([]WorldCity, error) {
+	worldUUID, err := db.ParseUUID(config.DefaultWorldID)
+	if err != nil {
+		return nil, err
 	}
-	dx, dy := 1, 0
-	segLen := 1
-	for {
-		for s := 0; s < 2; s++ {
-			for k := 0; k < segLen; k++ {
-				x += dx
-				y += dy
-				if !taken[[2]int{x, y}] {
-					return x, y
-				}
-			}
-			dx, dy = -dy, dx // vira 90° à esquerda
-		}
-		segLen++
+	rows, err := s.q.ListWorldCities(ctx, worldUUID)
+	if err != nil {
+		return nil, err
 	}
+	out := make([]WorldCity, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WorldCity{
+			ID: db.UUIDString(r.ID), Name: r.Name, Region: r.Region,
+			CoordX: int(r.CoordX), CoordY: int(r.CoordY), Username: r.Username,
+		})
+	}
+	return out, nil
 }
 
 // LoadCity carrega a cidade (com edifícios) e calcula os recursos atuais (lazy eval) em "now".
@@ -344,7 +357,7 @@ func toDomainCity(c db.City, now time.Time) City {
 	st := stateFromRow(c)
 	gw, gh := config.GridForEra(int(c.Era))
 	return City{
-		ID: db.UUIDString(c.ID), PlayerID: db.UUIDString(c.PlayerID), Name: c.Name,
+		ID: db.UUIDString(c.ID), PlayerID: db.UUIDString(c.PlayerID), Name: c.Name, Region: c.Region,
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
 		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},

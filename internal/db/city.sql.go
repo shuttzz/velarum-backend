@@ -14,25 +14,26 @@ import (
 
 const createCity = `-- name: CreateCity :one
 INSERT INTO cities (
-    world_id, player_id, name, coord_x, coord_y, era,
+    world_id, player_id, name, region, coord_x, coord_y, era,
     matter_stored, energy_stored, knowledge_stored,
     matter_rate, energy_rate, knowledge_rate,
     matter_cap, energy_cap, knowledge_cap,
     resources_updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12,
-    $13, $14, $15,
-    $16
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13,
+    $14, $15, $16,
+    $17
 )
-RETURNING id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at
+RETURNING id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at
 `
 
 type CreateCityParams struct {
 	WorldID            pgtype.UUID `json:"world_id"`
 	PlayerID           pgtype.UUID `json:"player_id"`
 	Name               string      `json:"name"`
+	Region             string      `json:"region"`
 	CoordX             int32       `json:"coord_x"`
 	CoordY             int32       `json:"coord_y"`
 	Era                int16       `json:"era"`
@@ -53,6 +54,7 @@ func (q *Queries) CreateCity(ctx context.Context, arg CreateCityParams) (City, e
 		arg.WorldID,
 		arg.PlayerID,
 		arg.Name,
+		arg.Region,
 		arg.CoordX,
 		arg.CoordY,
 		arg.Era,
@@ -73,6 +75,7 @@ func (q *Queries) CreateCity(ctx context.Context, arg CreateCityParams) (City, e
 		&i.WorldID,
 		&i.PlayerID,
 		&i.Name,
+		&i.Region,
 		&i.CoordX,
 		&i.CoordY,
 		&i.Era,
@@ -92,7 +95,7 @@ func (q *Queries) CreateCity(ctx context.Context, arg CreateCityParams) (City, e
 }
 
 const getCity = `-- name: GetCity :one
-SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1
 `
 
 func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
@@ -103,6 +106,7 @@ func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
 		&i.WorldID,
 		&i.PlayerID,
 		&i.Name,
+		&i.Region,
 		&i.CoordX,
 		&i.CoordY,
 		&i.Era,
@@ -151,7 +155,7 @@ func (q *Queries) GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) 
 }
 
 const getCityByPlayer = `-- name: GetCityByPlayer :one
-SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE player_id = $1
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE player_id = $1
 `
 
 func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error) {
@@ -162,6 +166,7 @@ func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (Ci
 		&i.WorldID,
 		&i.PlayerID,
 		&i.Name,
+		&i.Region,
 		&i.CoordX,
 		&i.CoordY,
 		&i.Era,
@@ -181,7 +186,7 @@ func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (Ci
 }
 
 const getCityForUpdate = `-- name: GetCityForUpdate :one
-SELECT id, world_id, player_id, name, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1 FOR UPDATE
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error) {
@@ -192,6 +197,7 @@ func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, e
 		&i.WorldID,
 		&i.PlayerID,
 		&i.Name,
+		&i.Region,
 		&i.CoordX,
 		&i.CoordY,
 		&i.Era,
@@ -264,6 +270,49 @@ func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]
 			&i.Level,
 			&i.PosX,
 			&i.PosY,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorldCities = `-- name: ListWorldCities :many
+SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username
+FROM cities c JOIN players p ON p.id = c.player_id
+WHERE c.world_id = $1
+ORDER BY c.id
+`
+
+type ListWorldCitiesRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Name     string      `json:"name"`
+	Region   string      `json:"region"`
+	CoordX   int32       `json:"coord_x"`
+	CoordY   int32       `json:"coord_y"`
+	Username string      `json:"username"`
+}
+
+func (q *Queries) ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCitiesRow, error) {
+	rows, err := q.db.Query(ctx, listWorldCities, worldID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorldCitiesRow
+	for rows.Next() {
+		var i ListWorldCitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Region,
+			&i.CoordX,
+			&i.CoordY,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}

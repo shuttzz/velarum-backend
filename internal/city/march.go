@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,6 +15,13 @@ import (
 	"backend/internal/domain/combat"
 	"backend/internal/domain/resource"
 )
+
+// provinceSeed deriva uma seed determinística do jogador para o layout das províncias no mapa.
+func provinceSeed(playerID string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(playerID))
+	return h.Sum64()
+}
 
 // Erros de negócio do mapa/marcha (mapeáveis para HTTP 4xx).
 var (
@@ -109,11 +117,13 @@ func (s *Service) ensureProvinces(ctx context.Context, cityRow db.City) error {
 	if again > 0 {
 		return tx.Commit(ctx) // outra requisição gerou
 	}
-	for _, t := range config.Era1Provinces {
+	coords := config.PlaceEra1Provinces(provinceSeed(db.UUIDString(cityRow.PlayerID))) // layout espalhado por seed
+	for i, t := range config.Era1Provinces {
 		defAtk, defHP := t.DefenseAggregate() // agregado da composição de tropas (auto-resolve/exibição)
+		c := coords[i]
 		if _, err := q.InsertProvince(ctx, db.InsertProvinceParams{
 			WorldID: cityRow.WorldID, PlayerID: cityRow.PlayerID, NameKey: t.NameKey,
-			Q: int32(t.Q), R: int32(t.R), Ring: int16(t.Ring), DefAttack: int32(defAtk), DefHp: int32(defHP),
+			Q: int32(c.Q), R: int32(c.R), Ring: int16(t.Ring), DefAttack: int32(defAtk), DefHp: int32(defHP),
 			RewardMatter: t.Reward.Matter, RewardEnergy: t.Reward.Energy, RewardKnowledge: t.Reward.Knowledge,
 		}); err != nil {
 			return fmt.Errorf("gerar província: %w", err)
@@ -197,7 +207,7 @@ func (s *Service) StartMarch(ctx context.Context, cityID, provinceID string, tro
 		}
 	}
 
-	dur := time.Duration(int(prov.Ring)*config.ProvinceMarchSecondsPerRing) * time.Second
+	dur := time.Duration(config.MarchSecondsTo(int(prov.Q), int(prov.R))) * time.Second
 	arriveAt := now.Add(dur)
 	troopsJSON, _ := json.Marshal(troops)
 	m, err := q.InsertMarch(ctx, db.InsertMarchParams{
@@ -290,7 +300,7 @@ func (s *Service) ResolveArrival(ctx context.Context, marchID string, now time.T
 
 	won := out.AttackerWins
 	survJSON, _ := json.Marshal(out.Survivors)
-	returnAt := now.Add(time.Duration(int(prov.Ring)*config.ProvinceMarchSecondsPerRing) * time.Second)
+	returnAt := now.Add(time.Duration(config.MarchSecondsTo(int(prov.Q), int(prov.R))) * time.Second)
 	if err := q.SetMarchResult(ctx, db.SetMarchResultParams{ID: mid, AttackerWon: &won, Survivors: survJSON, ReturnAt: pgTime(returnAt)}); err != nil {
 		return err
 	}

@@ -144,12 +144,15 @@ Avançar abre: novos edifícios, unidades, recursos de era, ramo da árvore, e o
 
 ## 8. Mapa do mundo e expansão PvE
 
-**Mapa hexagonal persistente** compartilhado por temporada, em 3 camadas:
-- **Províncias PvE** (territórios de NPCs) — conquistadas via combate tático **ou** negociação (recursos). Dão espaço de cidade, recursos, depósitos passivos, pontos de ranking. Organizadas em **anéis concêntricos por era** (mais longe = era mais avançada). Instanciadas por jogador.
-- **Territórios de Aliança** — disputa PvP coletiva (ver §10), dão bônus passivos coletivos.
+**Mapa hexagonal persistente e COMPARTILHADO por servidor/world** (modelo Travian/OGame/RoK-assíncrono — **revisão 2026-06-04**, ver nota abaixo). Todos os jogadores do mesmo world ocupam o **mesmo mapa**: veem vizinhos, território de aliança, e o conteúdo PvE nas **mesmas posições**. Tudo **assíncrono** (marchas = timers; **sem tempo real / sem WebSocket**). Camadas:
+- **Cidades dos jogadores** — em tiles reais do mapa compartilhado (posição = `coord_x/coord_y`). **Inviolável** (nunca tomada), mas saqueável (§11).
+- **Conteúdo PvE** (acampamentos/regiões de NPC) — em **tiles compartilhados** (todos veem). Combate **resolvido individualmente por jogador** (modelo RoK: sem "roubo de kill"); conquistar uma região dá ao conquistador espaço de cidade, recursos, depósito passivo, ranking. Dificuldade cresce com a **distância da origem do world / faixa de era**.
+- **Territórios de Aliança** — disputa PvP coletiva (§10); colorem/controlam regiões do mapa.
 - **Nós dos Tecelões** — 1 por era, pontos fixos disputados.
 
-**Escala:** cidades ficam em "bolsões de Lacuna" instanciados (não ocupam tile físico) → o mapa não lota com milhares de jogadores; o que existe no mapa são pontos de influência, territórios e Nós.
+**Escala:** **sharding por world/servidor** — cada world tem N jogadores (milhares); abre-se um novo world quando lota. Dentro de um world, mapa 100% compartilhado. Viável para dev solo em Go+Postgres+Redis pois NÃO há tempo real (o caro do mundo compartilhado é o realtime/broadcast, que o design assíncrono elimina). Grid com índice espacial `(x,y)`; marchas resolvidas por job no `arrive_at`.
+
+> **Nota de revisão (2026-06-04):** a versão anterior instanciava o PvE por jogador ("bolsões de Lacuna") por crer que mundo compartilhado era inviável p/ dev solo. Pesquisa de mercado mostrou que isso só vale para mundo compartilhado **em tempo real**; o **assíncrono** (Travian/OGame rodaram décadas em PHP+MySQL) é barato e é o padrão do gênero — e dá a "sensação de mundo vivo" que o instanciado não dá. Detalhes de como as faixas de dificuldade/era mapeiam no mapa compartilhado: a refinar na implementação.
 
 ---
 

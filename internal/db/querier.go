@@ -61,6 +61,7 @@ type Querier interface {
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
 	ListPlayerProvinces(ctx context.Context, playerID pgtype.UUID) ([]Province, error)
 	ListPlayerReports(ctx context.Context, playerID pgtype.UUID) ([]Report, error)
+	ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCitiesRow, error)
 	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
 	MarkAllReportsRead(ctx context.Context, playerID pgtype.UUID) error
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error

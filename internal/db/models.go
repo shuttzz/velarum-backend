@@ -50,6 +50,7 @@ type City struct {
 	WorldID            pgtype.UUID `json:"world_id"`
 	PlayerID           pgtype.UUID `json:"player_id"`
 	Name               string      `json:"name"`
+	Region             string      `json:"region"`
 	CoordX             int32       `json:"coord_x"`
 	CoordY             int32       `json:"coord_y"`
 	Era                int16       `json:"era"`

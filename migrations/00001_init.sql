@@ -58,6 +58,7 @@ CREATE TABLE cities (
     world_id             UUID NOT NULL REFERENCES worlds(id),
     player_id            UUID NOT NULL REFERENCES players(id),
     name                 TEXT NOT NULL,
+    region               TEXT NOT NULL DEFAULT '', -- região nomeada do mundo onde a cidade nasceu
     coord_x              INTEGER NOT NULL,
     coord_y              INTEGER NOT NULL,
     era                  SMALLINT NOT NULL DEFAULT 1,

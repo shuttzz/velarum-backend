@@ -96,6 +96,16 @@ func main() {
 		writeJSON(w, http.StatusOK, config.Catalog())
 	})
 
+	// Cidades do mundo COMPARTILHADO (vizinhos no mapa). Protegida (basta estar logado).
+	mux.HandleFunc("GET /world/cities", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		cities, err := citySvc.WorldCities(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, cities)
+	}))
+
 	mux.HandleFunc("POST /auth/register", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string `json:"username"`

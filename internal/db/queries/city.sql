@@ -1,16 +1,16 @@
 -- name: CreateCity :one
 INSERT INTO cities (
-    world_id, player_id, name, coord_x, coord_y, era,
+    world_id, player_id, name, region, coord_x, coord_y, era,
     matter_stored, energy_stored, knowledge_stored,
     matter_rate, energy_rate, knowledge_rate,
     matter_cap, energy_cap, knowledge_cap,
     resources_updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12,
-    $13, $14, $15,
-    $16
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13,
+    $14, $15, $16,
+    $17
 )
 RETURNING *;
 
@@ -25,6 +25,12 @@ SELECT * FROM cities WHERE player_id = $1;
 
 -- name: ListWorldCityCoords :many
 SELECT coord_x, coord_y FROM cities WHERE world_id = $1;
+
+-- name: ListWorldCities :many
+SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username
+FROM cities c JOIN players p ON p.id = c.player_id
+WHERE c.world_id = $1
+ORDER BY c.id;
 
 -- name: GetCityAccountID :one
 SELECT p.account_id FROM cities c JOIN players p ON p.id = c.player_id WHERE c.id = $1;

@@ -85,6 +85,7 @@ type WorldMarch struct {
 	TargetID     string           `json:"target_id"`
 	Status       string           `json:"status"` // outbound | collecting | returning | done
 	Troops       map[string]int   `json:"troops"`
+	Survivors    map[string]int   `json:"survivors"`    // tropas que voltam (= enviado em coleta; pós-combate em raid)
 	Loot         resource.Amounts `json:"loot"`
 	AttackerWon  *bool            `json:"attacker_won"` // raid: venceu? nil = marcha de coleta (nó)
 	ArriveAt     time.Time        `json:"arrive_at"`
@@ -697,6 +698,9 @@ func worldMarchToDomain(m db.WorldMarch) WorldMarch {
 		ID: db.UUIDString(m.ID), TargetID: db.UUIDString(m.TargetID), Status: m.Status, AttackerWon: m.AttackerWon, ArriveAt: m.ArriveAt,
 	}
 	_ = json.Unmarshal(m.Troops, &dm.Troops)
+	if len(m.Survivors) > 0 {
+		_ = json.Unmarshal(m.Survivors, &dm.Survivors)
+	}
 	if len(m.Loot) > 0 {
 		_ = json.Unmarshal(m.Loot, &dm.Loot)
 	}

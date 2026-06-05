@@ -39,7 +39,7 @@ func (q *Queries) CountWorldTargets(ctx context.Context, worldID pgtype.UUID) (i
 }
 
 const getWorldTargetForUpdate = `-- name: GetWorldTargetForUpdate :one
-SELECT id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, created_at FROM world_targets WHERE id = $1 FOR UPDATE
+SELECT id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, expires_at, created_at FROM world_targets WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetWorldTargetForUpdate(ctx context.Context, id pgtype.UUID) (WorldTarget, error) {
@@ -62,6 +62,7 @@ func (q *Queries) GetWorldTargetForUpdate(ctx context.Context, id pgtype.UUID) (
 		&i.RewardKnowledge,
 		&i.Status,
 		&i.OccupiedBy,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -69,24 +70,25 @@ func (q *Queries) GetWorldTargetForUpdate(ctx context.Context, id pgtype.UUID) (
 
 const insertWorldTarget = `-- name: InsertWorldTarget :one
 INSERT INTO world_targets (world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining,
-    def_attack, def_hp, reward_matter, reward_energy, reward_knowledge)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12)
-RETURNING id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, created_at
+    def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, expires_at, created_at
 `
 
 type InsertWorldTargetParams struct {
-	WorldID         pgtype.UUID `json:"world_id"`
-	Kind            string      `json:"kind"`
-	Resource        string      `json:"resource"`
-	Level           int32       `json:"level"`
-	CoordX          int32       `json:"coord_x"`
-	CoordY          int32       `json:"coord_y"`
-	AmountTotal     float64     `json:"amount_total"`
-	DefAttack       int32       `json:"def_attack"`
-	DefHp           int32       `json:"def_hp"`
-	RewardMatter    float64     `json:"reward_matter"`
-	RewardEnergy    float64     `json:"reward_energy"`
-	RewardKnowledge float64     `json:"reward_knowledge"`
+	WorldID         pgtype.UUID        `json:"world_id"`
+	Kind            string             `json:"kind"`
+	Resource        string             `json:"resource"`
+	Level           int32              `json:"level"`
+	CoordX          int32              `json:"coord_x"`
+	CoordY          int32              `json:"coord_y"`
+	AmountTotal     float64            `json:"amount_total"`
+	DefAttack       int32              `json:"def_attack"`
+	DefHp           int32              `json:"def_hp"`
+	RewardMatter    float64            `json:"reward_matter"`
+	RewardEnergy    float64            `json:"reward_energy"`
+	RewardKnowledge float64            `json:"reward_knowledge"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
 func (q *Queries) InsertWorldTarget(ctx context.Context, arg InsertWorldTargetParams) (WorldTarget, error) {
@@ -103,6 +105,7 @@ func (q *Queries) InsertWorldTarget(ctx context.Context, arg InsertWorldTargetPa
 		arg.RewardMatter,
 		arg.RewardEnergy,
 		arg.RewardKnowledge,
+		arg.ExpiresAt,
 	)
 	var i WorldTarget
 	err := row.Scan(
@@ -122,9 +125,43 @@ func (q *Queries) InsertWorldTarget(ctx context.Context, arg InsertWorldTargetPa
 		&i.RewardKnowledge,
 		&i.Status,
 		&i.OccupiedBy,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listExpiredCombatTargets = `-- name: ListExpiredCombatTargets :many
+SELECT id FROM world_targets t
+WHERE t.world_id = $1 AND t.kind IN ('village', 'creature') AND t.status <> 'depleted'
+  AND t.expires_at IS NOT NULL AND t.expires_at < $2
+  AND NOT EXISTS (SELECT 1 FROM world_marches m WHERE m.target_id = t.id AND m.status = 'outbound')
+`
+
+type ListExpiredCombatTargetsParams struct {
+	WorldID   pgtype.UUID        `json:"world_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+// Alvos de combate (village/creature) cujo TTL venceu E sem marcha a caminho (outbound trava o TTL).
+func (q *Queries) ListExpiredCombatTargets(ctx context.Context, arg ListExpiredCombatTargetsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listExpiredCombatTargets, arg.WorldID, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listWorldTargetCoords = `-- name: ListWorldTargetCoords :many
@@ -158,7 +195,7 @@ func (q *Queries) ListWorldTargetCoords(ctx context.Context, worldID pgtype.UUID
 }
 
 const listWorldTargets = `-- name: ListWorldTargets :many
-SELECT id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, created_at FROM world_targets WHERE world_id = $1 AND status <> 'depleted' ORDER BY id
+SELECT id, world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining, def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, status, occupied_by, expires_at, created_at FROM world_targets WHERE world_id = $1 AND status <> 'depleted' ORDER BY id
 `
 
 func (q *Queries) ListWorldTargets(ctx context.Context, worldID pgtype.UUID) ([]WorldTarget, error) {
@@ -187,6 +224,7 @@ func (q *Queries) ListWorldTargets(ctx context.Context, worldID pgtype.UUID) ([]
 			&i.RewardKnowledge,
 			&i.Status,
 			&i.OccupiedBy,
+			&i.ExpiresAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

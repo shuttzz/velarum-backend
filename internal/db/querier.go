@@ -64,6 +64,8 @@ type Querier interface {
 	ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID) ([]WorldMarch, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
 	ListCityTroops(ctx context.Context, cityID pgtype.UUID) ([]CityTroop, error)
+	// Alvos de combate (village/creature) cujo TTL venceu E sem marcha a caminho (outbound trava o TTL).
+	ListExpiredCombatTargets(ctx context.Context, arg ListExpiredCombatTargetsParams) ([]pgtype.UUID, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
 	ListPlayerProvinces(ctx context.Context, playerID pgtype.UUID) ([]Province, error)

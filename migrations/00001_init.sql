@@ -228,6 +228,7 @@ CREATE TABLE world_targets (
     reward_knowledge DOUBLE PRECISION NOT NULL DEFAULT 0,
     status           TEXT NOT NULL DEFAULT 'idle',        -- node: idle|occupied|depleted · combate: alive('idle')|depleted(morto)
     occupied_by      UUID,                                -- nó: world_march coletando agora (lock de 1 ocupante)
+    expires_at       TIMESTAMPTZ,                         -- combate: TTL — despawna se ninguém atacar (NULL p/ nó)
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (world_id, coord_x, coord_y)
 );

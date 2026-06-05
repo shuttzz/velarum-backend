@@ -74,7 +74,8 @@ type WorldTarget struct {
 	AmountRemaining float64          `json:"amount_remaining"`
 	DefAttack       int              `json:"def_attack"` // combate: defesa agregada
 	DefHP           int              `json:"def_hp"`
-	Reward          resource.Amounts `json:"reward"` // combate: loot ao matar
+	Reward          resource.Amounts `json:"reward"`      // combate: loot ao matar
+	ExpiresAt       *time.Time       `json:"expires_at"` // combate: quando despawna (TTL); nil p/ nó
 	Status          string           `json:"status"`
 }
 
@@ -96,6 +97,17 @@ func (s *Service) WorldTargets(ctx context.Context, now time.Time) ([]WorldTarge
 	worldUUID, err := db.ParseUUID(config.DefaultWorldID)
 	if err != nil {
 		return nil, err
+	}
+	// Expira alvos de combate vencidos (TTL) que não têm marcha a caminho — a população é reposta
+	// no ensure logo abaixo (mantém o mapa "vivo": aldeias/criaturas vão e vêm).
+	expired, err := s.q.ListExpiredCombatTargets(ctx, db.ListExpiredCombatTargetsParams{WorldID: worldUUID, ExpiresAt: pgTime(now)})
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range expired {
+		if err := s.q.SetWorldTargetDepleted(ctx, id); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.ensureWorldTargets(ctx, worldUUID, now); err != nil {
 		return nil, err
@@ -176,6 +188,7 @@ func (s *Service) ensureWorldTargets(ctx context.Context, worldUUID pgtype.UUID,
 				defA, defH, reward := config.CombatTargetFor(tk.kind, level)
 				p.DefAttack, p.DefHp = int32(defA), int32(defH)
 				p.RewardMatter, p.RewardEnergy, p.RewardKnowledge = reward.Matter, reward.Energy, reward.Knowledge
+				p.ExpiresAt = pgTime(now.Add(config.RandomCombatTTL(rng))) // TTL (nó não tem)
 			}
 			if _, err := q.InsertWorldTarget(ctx, p); err != nil {
 				return fmt.Errorf("spawn %s: %w", tk.kind, err)
@@ -664,7 +677,7 @@ func resourceNameOf(a resource.Amounts) string {
 }
 
 func worldTargetToDomain(t db.WorldTarget) WorldTarget {
-	return WorldTarget{
+	wt := WorldTarget{
 		ID: db.UUIDString(t.ID), Kind: t.Kind, Resource: t.Resource, Level: int(t.Level),
 		CoordX: int(t.CoordX), CoordY: int(t.CoordY),
 		AmountTotal: t.AmountTotal, AmountRemaining: t.AmountRemaining,
@@ -672,6 +685,11 @@ func worldTargetToDomain(t db.WorldTarget) WorldTarget {
 		Reward: resource.Amounts{Matter: t.RewardMatter, Energy: t.RewardEnergy, Knowledge: t.RewardKnowledge},
 		Status: t.Status,
 	}
+	if t.ExpiresAt.Valid {
+		e := t.ExpiresAt.Time
+		wt.ExpiresAt = &e
+	}
+	return wt
 }
 
 func worldMarchToDomain(m db.WorldMarch) WorldMarch {

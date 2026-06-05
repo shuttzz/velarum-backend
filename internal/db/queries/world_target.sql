@@ -13,12 +13,19 @@ SELECT coord_x, coord_y FROM world_targets WHERE world_id = $1;
 
 -- name: InsertWorldTarget :one
 INSERT INTO world_targets (world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining,
-    def_attack, def_hp, reward_matter, reward_energy, reward_knowledge)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12)
+    def_attack, def_hp, reward_matter, reward_energy, reward_knowledge, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: GetWorldTargetForUpdate :one
 SELECT * FROM world_targets WHERE id = $1 FOR UPDATE;
+
+-- name: ListExpiredCombatTargets :many
+-- Alvos de combate (village/creature) cujo TTL venceu E sem marcha a caminho (outbound trava o TTL).
+SELECT id FROM world_targets t
+WHERE t.world_id = $1 AND t.kind IN ('village', 'creature') AND t.status <> 'depleted'
+  AND t.expires_at IS NOT NULL AND t.expires_at < $2
+  AND NOT EXISTS (SELECT 1 FROM world_marches m WHERE m.target_id = t.id AND m.status = 'outbound');
 
 -- name: SetWorldTargetDepleted :exec
 -- Marca o alvo como consumido/morto (combate vencido ou nó zerado sem respawn).

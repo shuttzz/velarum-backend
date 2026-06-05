@@ -2,6 +2,7 @@ package city
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -59,6 +60,54 @@ func newCombatTarget(t *testing.T, q *db.Queries, ctx context.Context, kind stri
 		t.Fatalf("InsertWorldTarget(combat): %v", err)
 	}
 	return n
+}
+
+// TTL: alvo de combate vencido SEM marcha a caminho é listado para expirar; COM marcha outbound
+// (alguém indo atacar) ele NÃO expira (a marcha trava o TTL).
+func TestCombatTargetTTL_Integration(t *testing.T) {
+	svc, pool, ctx, now := setupNodeTest(t)
+	q := db.New(pool)
+	c := enterTestGame(t, svc, pool, "brevali", now)
+	worldUUID, _ := db.ParseUUID(config.DefaultWorldID)
+	cityUUID, _ := db.ParseUUID(c.ID)
+	past := pgTime(now.Add(-time.Minute))
+
+	mk := func(x int) db.WorldTarget {
+		defA, defH, reward := config.CombatTargetFor("village", 1)
+		row, err := q.InsertWorldTarget(ctx, db.InsertWorldTargetParams{
+			WorldID: worldUUID, Kind: "village", Level: 1, CoordX: int32(x), CoordY: int32(c.CoordY),
+			DefAttack: int32(defA), DefHp: int32(defH), RewardMatter: reward.Matter, RewardEnergy: reward.Energy, RewardKnowledge: reward.Knowledge,
+			ExpiresAt: past,
+		})
+		if err != nil {
+			t.Fatalf("InsertWorldTarget: %v", err)
+		}
+		return row
+	}
+	expireFree := mk(c.CoordX + 100) // vencido, sem marcha → expira
+	locked := mk(c.CoordX + 101)     // vencido, mas com marcha a caminho → NÃO expira
+
+	troopsJSON, _ := json.Marshal(map[string]int{"lanceiro": 1})
+	if _, err := q.InsertWorldMarch(ctx, db.InsertWorldMarchParams{
+		WorldID: worldUUID, CityID: cityUUID, TargetID: locked.ID, Troops: troopsJSON, DepartAt: now, ArriveAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("InsertWorldMarch: %v", err)
+	}
+
+	ids, err := q.ListExpiredCombatTargets(ctx, db.ListExpiredCombatTargetsParams{WorldID: worldUUID, ExpiresAt: pgTime(now)})
+	if err != nil {
+		t.Fatalf("ListExpiredCombatTargets: %v", err)
+	}
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[db.UUIDString(id)] = true
+	}
+	if !got[db.UUIDString(expireFree.ID)] {
+		t.Fatal("alvo vencido sem marcha deveria estar na lista de expiração")
+	}
+	if got[db.UUIDString(locked.ID)] {
+		t.Fatal("alvo com marcha a caminho NÃO deveria expirar (TTL travado)")
+	}
 }
 
 // Raid VITORIOSA numa aldeia: 20 lanceiros batem a defesa nível 1 → loot + alvo consumido

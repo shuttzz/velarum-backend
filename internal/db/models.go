@@ -194,21 +194,22 @@ type WorldMarch struct {
 }
 
 type WorldTarget struct {
-	ID              pgtype.UUID `json:"id"`
-	WorldID         pgtype.UUID `json:"world_id"`
-	Kind            string      `json:"kind"`
-	Resource        string      `json:"resource"`
-	Level           int32       `json:"level"`
-	CoordX          int32       `json:"coord_x"`
-	CoordY          int32       `json:"coord_y"`
-	AmountTotal     float64     `json:"amount_total"`
-	AmountRemaining float64     `json:"amount_remaining"`
-	DefAttack       int32       `json:"def_attack"`
-	DefHp           int32       `json:"def_hp"`
-	RewardMatter    float64     `json:"reward_matter"`
-	RewardEnergy    float64     `json:"reward_energy"`
-	RewardKnowledge float64     `json:"reward_knowledge"`
-	Status          string      `json:"status"`
-	OccupiedBy      pgtype.UUID `json:"occupied_by"`
-	CreatedAt       time.Time   `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	WorldID         pgtype.UUID        `json:"world_id"`
+	Kind            string             `json:"kind"`
+	Resource        string             `json:"resource"`
+	Level           int32              `json:"level"`
+	CoordX          int32              `json:"coord_x"`
+	CoordY          int32              `json:"coord_y"`
+	AmountTotal     float64            `json:"amount_total"`
+	AmountRemaining float64            `json:"amount_remaining"`
+	DefAttack       int32              `json:"def_attack"`
+	DefHp           int32              `json:"def_hp"`
+	RewardMatter    float64            `json:"reward_matter"`
+	RewardEnergy    float64            `json:"reward_energy"`
+	RewardKnowledge float64            `json:"reward_knowledge"`
+	Status          string             `json:"status"`
+	OccupiedBy      pgtype.UUID        `json:"occupied_by"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       time.Time          `json:"created_at"`
 }

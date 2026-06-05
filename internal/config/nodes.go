@@ -3,6 +3,7 @@ package config
 import (
 	"math"
 	"math/rand"
+	"time"
 
 	"backend/internal/domain/resource"
 )
@@ -38,6 +39,19 @@ func RandomNodeResource(rng *rand.Rand) string {
 // RandomTargetLevel sorteia um nível 1..3 para um alvo.
 func RandomTargetLevel(rng *rand.Rand) int {
 	return 1 + rng.Intn(3)
+}
+
+// TTL dos alvos de COMBATE (aldeias/criaturas): se ninguém atacar nesse tempo, despawnam (e a
+// população é reposta em outro lugar) — mantém o mapa "vivo". Faixa tunável (dev mais curto).
+const (
+	combatTTLMinSeconds = 600  // 10 min
+	combatTTLMaxSeconds = 1800 // 30 min
+)
+
+// RandomCombatTTL sorteia a duração de vida de um alvo de combate (entre min e max).
+func RandomCombatTTL(rng *rand.Rand) time.Duration {
+	span := combatTTLMaxSeconds - combatTTLMinSeconds
+	return time.Duration(combatTTLMinSeconds+rng.Intn(span+1)) * time.Second
 }
 
 // PlaceOneNearAnyRegion acha um tile livre em torno de uma região ALEATÓRIA (spawn/top-up de

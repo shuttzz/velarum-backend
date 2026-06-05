@@ -60,11 +60,11 @@ var nodeResourceMult = map[string]float64{"matter": 1.0, "energy": 0.75, "knowle
 func nodeBaseAmount(level int) float64 {
 	switch level {
 	case 1:
-		return 300
+		return 600
 	case 2:
-		return 700
-	default: // 3+
 		return 1500
+	default: // 3+
+		return 3000
 	}
 }
 
@@ -87,31 +87,36 @@ func MarchSecondsBetween(x1, y1, x2, y2 int) int {
 	return d * MarchSecondsPerHex
 }
 
+// CollectFillSeconds é o tempo (segundos) para um exército ENCHER sua CARGA TOTAL num nó. É o KNOB
+// central do ritmo da coleta: lento o bastante para PRENDER as tropas e a fila de marcha (custo de
+// oportunidade real), mantendo os recursos abundantes no mapa. Tunável.
+const CollectFillSeconds = 300 // 5 min para encher a carga cheia
+
 // CollectPlan calcula quanto um exército coleta de um nó e quanto tempo leva. Modelo RoK por-tropa:
 //   - coletado = min(carga_total, disponível); carga_total = Σ count×Carry
-//   - tempo    = coletado / taxa_total;        taxa_total  = Σ count×GatherRate
+//   - tempo    = coletado / carga_total × CollectFillSeconds
 //
-// Consequência: encher a carga cheia leva ~constante; mandar exército grande num nó PEQUENO o
-// drena mais rápido. (⚠ não-intuitivo — explicar ao jogador no futuro.)
+// Consequência: encher a carga cheia leva CollectFillSeconds (constante, independe do tamanho do
+// exército); mandar exército grande num nó PEQUENO o drena PROPORCIONALMENTE mais rápido.
+// (⚠ não-intuitivo — explicar ao jogador no futuro.)
 func CollectPlan(troops map[string]int, available float64) (collected, seconds float64) {
-	var totalCarry, totalRate float64
+	var totalCarry float64
 	for ut, c := range troops {
 		if c <= 0 {
 			continue
 		}
 		if u, ok := UnitByKey(ut); ok {
 			totalCarry += float64(u.Carry) * float64(c)
-			totalRate += u.GatherRate * float64(c)
 		}
 	}
 	collected = totalCarry
 	if available < collected {
 		collected = available
 	}
-	if collected <= 0 || totalRate <= 0 {
+	if collected <= 0 || totalCarry <= 0 {
 		return 0, 0
 	}
-	return collected, collected / totalRate
+	return collected, collected / totalCarry * CollectFillSeconds
 }
 
 // NodeSpawn descreve um nó a ser criado (posição + nível + recurso).

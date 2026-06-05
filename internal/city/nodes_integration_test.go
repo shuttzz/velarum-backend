@@ -203,6 +203,8 @@ func TestCollectFlow_Integration(t *testing.T) {
 		t.Fatalf("AddCityTroops: %v", err)
 	}
 	node := newNode(t, q, ctx, "matter", 3, c.CoordX+100, c.CoordY)
+	total := config.NodeAmountFor("matter", 3) // carga 500 < total → depleção PARCIAL
+	rem := total - 500
 
 	m, err := svc.StartCollect(ctx, c.ID, db.UUIDString(node.ID), map[string]int{"lanceiro": 20}, now)
 	if err != nil {
@@ -232,8 +234,8 @@ func TestCollectFlow_Integration(t *testing.T) {
 		t.Fatalf("loot esperado 500 de matéria, veio %v", wm.Loot.Matter)
 	}
 	got, _ := q.GetWorldTargetForUpdate(ctx, node.ID)
-	if got.Status != "occupied" || got.AmountRemaining != 1000 {
-		t.Fatalf("nó deveria estar ocupado com 1000 restantes (depleção parcial), veio status=%q rem=%v", got.Status, got.AmountRemaining)
+	if got.Status != "occupied" || got.AmountRemaining != rem {
+		t.Fatalf("nó deveria estar ocupado com %v restantes (depleção parcial), veio status=%q rem=%v", rem, got.Status, got.AmountRemaining)
 	}
 
 	// Coleta concluída → libera o nó e manda voltar.
@@ -244,8 +246,8 @@ func TestCollectFlow_Integration(t *testing.T) {
 	if got.Status != "idle" || got.OccupiedBy.Valid {
 		t.Fatalf("nó deveria estar liberado (idle, sem ocupante): status=%q occupied=%v", got.Status, got.OccupiedBy.Valid)
 	}
-	if got.AmountRemaining != 1000 {
-		t.Fatalf("nó deveria manter 1000 (não respawna em depleção parcial), veio %v", got.AmountRemaining)
+	if got.AmountRemaining != rem {
+		t.Fatalf("nó deveria manter %v (não respawna em depleção parcial), veio %v", rem, got.AmountRemaining)
 	}
 	loaded, _ = svc.LoadCity(ctx, c.ID, *wm.CollectUntil)
 	rm := loaded.WorldMarches[0]

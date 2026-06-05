@@ -14,12 +14,12 @@ func TestCollectPlan(t *testing.T) {
 		wantCollected float64
 		wantSeconds   float64
 	}{
-		// 10 lanceiros: carga 250, taxa 5/s. Nó grande → leva a carga cheia (50s).
-		{"carga cheia (nó grande)", map[string]int{"lanceiro": 10}, 1000, 250, 50},
-		// 20 lanceiros: carga 500, taxa 10/s. Nó pequeno (300) → drena 300 mais rápido (30s).
-		{"drena nó pequeno", map[string]int{"lanceiro": 20}, 300, 300, 30},
-		// Misto: carga 250+200=450, taxa 5+4=9/s. Encher carga cheia ≈ 50s.
-		{"exército misto", map[string]int{"lanceiro": 10, "arqueiro": 10}, 1000, 450, 50},
+		// 10 lanceiros: carga 250. Nó grande → enche a carga cheia (CollectFillSeconds=300s).
+		{"carga cheia (nó grande)", map[string]int{"lanceiro": 10}, 1000, 250, 300},
+		// 20 lanceiros: carga 500. Nó pequeno (300) → drena 300 PROPORCIONAL (300/500×300=180s).
+		{"drena nó pequeno", map[string]int{"lanceiro": 20}, 300, 300, 180},
+		// Misto: carga 250+200=450. Nó grande → carga cheia (300s).
+		{"exército misto", map[string]int{"lanceiro": 10, "arqueiro": 10}, 1000, 450, 300},
 		// Sem tropas ou nó vazio → nada.
 		{"sem tropas", map[string]int{}, 1000, 0, 0},
 		{"nó vazio", map[string]int{"lanceiro": 10}, 0, 0, 0},

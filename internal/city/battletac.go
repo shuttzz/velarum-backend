@@ -27,7 +27,7 @@ var (
 const (
 	battleW         = 6
 	battleH         = 6
-	battleMaxRounds = 12
+	battleMaxRounds = 25 // alto o bastante p/ batalhas normais acabarem por aniquilação; o teto é só anti-stall
 	defenderHpPer   = 30
 )
 

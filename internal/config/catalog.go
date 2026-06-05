@@ -46,6 +46,8 @@ type CatalogUnit struct {
 	Cost            resource.Amounts `json:"cost"`
 	RecruitTime     float64          `json:"recruit_time"`
 	MinBarracksLevel int             `json:"min_barracks_level"`
+	Carry           int              `json:"carry"`       // capacidade de carga (coleta de nós)
+	GatherRate      float64          `json:"gather_rate"` // taxa de coleta por unidade (recurso/s)
 	Era             int              `json:"era"`
 }
 
@@ -88,7 +90,8 @@ func Catalog() CatalogPayload {
 	for _, u := range Era1Units {
 		units = append(units, CatalogUnit{
 			Key: u.Key, Name: u.Name, Category: u.Category, Attack: u.Attack, Defense: u.Defense,
-			HP: u.HP, Move: u.Move, Range: u.Range, Cost: u.Cost, RecruitTime: u.RecruitTime, MinBarracksLevel: u.MinBarracksLevel, Era: u.Era,
+			HP: u.HP, Move: u.Move, Range: u.Range, Cost: u.Cost, RecruitTime: u.RecruitTime, MinBarracksLevel: u.MinBarracksLevel,
+			Carry: u.Carry, GatherRate: u.GatherRate, Era: u.Era,
 		})
 	}
 	return CatalogPayload{

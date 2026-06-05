@@ -130,7 +130,7 @@ func (s *Service) ensureWorldTargets(ctx context.Context, worldUUID pgtype.UUID,
 	for _, sp := range config.PlaceWorldNodes(rng, taken) {
 		if _, err := q.InsertWorldTarget(ctx, db.InsertWorldTargetParams{
 			WorldID: worldUUID, Kind: "node", Resource: sp.Resource, Level: int32(sp.Level),
-			CoordX: int32(sp.X), CoordY: int32(sp.Y), AmountTotal: config.NodeAmountForLevel(sp.Level),
+			CoordX: int32(sp.X), CoordY: int32(sp.Y), AmountTotal: config.NodeAmountFor(sp.Resource, sp.Level),
 		}); err != nil {
 			return fmt.Errorf("semear nó: %w", err)
 		}
@@ -361,7 +361,7 @@ func (s *Service) ResolveWorldCollect(ctx context.Context, marchID string, now t
 			if sp, ok := config.PlaceRespawnNode(rng, taken); ok {
 				if err := q.RespawnWorldTarget(ctx, db.RespawnWorldTargetParams{
 					ID: target.ID, Kind: "node", Resource: sp.Resource, Level: int32(sp.Level),
-					CoordX: int32(sp.X), CoordY: int32(sp.Y), AmountTotal: config.NodeAmountForLevel(sp.Level),
+					CoordX: int32(sp.X), CoordY: int32(sp.Y), AmountTotal: config.NodeAmountFor(sp.Resource, sp.Level),
 				}); err != nil {
 					return err
 				}

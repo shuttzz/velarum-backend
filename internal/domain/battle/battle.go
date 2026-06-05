@@ -108,6 +108,9 @@ type Battle struct {
 	Acted     map[string]bool `json:"acted"`
 	Over      bool            `json:"over"`
 	Winner    Side            `json:"winner"`
+	// ByRoundLimit indica que a batalha terminou pelo TETO de rounds (decidida por maioria de HP,
+	// inimigo ainda vivo) — não por aniquilação. O frontend rotula "vitória/derrota por pontos".
+	ByRoundLimit bool `json:"by_round_limit"`
 }
 
 // tileAt retorna o tipo de tile na casa h (e true) ou ("", false) se a casa é neutra.
@@ -308,6 +311,7 @@ func (b *Battle) checkOver() {
 
 func (b *Battle) finishByHp() {
 	b.Over = true
+	b.ByRoundLimit = true
 	if b.totalHp(Attacker) > b.totalHp(Defender) {
 		b.Winner = Attacker
 	} else {

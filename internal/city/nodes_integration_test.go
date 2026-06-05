@@ -38,7 +38,7 @@ func newNode(t *testing.T, q *db.Queries, ctx context.Context, res string, level
 	worldUUID, _ := db.ParseUUID(config.DefaultWorldID)
 	n, err := q.InsertWorldTarget(ctx, db.InsertWorldTargetParams{
 		WorldID: worldUUID, Kind: "node", Resource: res, Level: int32(level),
-		CoordX: int32(x), CoordY: int32(y), AmountTotal: config.NodeAmountForLevel(level),
+		CoordX: int32(x), CoordY: int32(y), AmountTotal: config.NodeAmountFor(res, level),
 	})
 	if err != nil {
 		t.Fatalf("InsertWorldTarget: %v", err)
@@ -138,7 +138,8 @@ func TestCollectRespawn_Integration(t *testing.T) {
 	if err := q.AddCityTroops(ctx, db.AddCityTroopsParams{CityID: cityUUID, UnitType: "lanceiro", Count: 20}); err != nil {
 		t.Fatalf("AddCityTroops: %v", err)
 	}
-	node := newNode(t, q, ctx, "energy", 1, c.CoordX+100, c.CoordY) // nível 1 = 300; carga 500 → drena
+	node := newNode(t, q, ctx, "energy", 1, c.CoordX+100, c.CoordY) // energia nível 1 (escala 0.75); carga 500 → drena
+	wantLoot := config.NodeAmountFor("energy", 1)
 
 	m, err := svc.StartCollect(ctx, c.ID, db.UUIDString(node.ID), map[string]int{"lanceiro": 20}, now)
 	if err != nil {
@@ -149,8 +150,8 @@ func TestCollectRespawn_Integration(t *testing.T) {
 	}
 	loaded, _ := svc.LoadCity(ctx, c.ID, m.ArriveAt)
 	wm := loaded.WorldMarches[0]
-	if wm.Loot.Energy != 300 {
-		t.Fatalf("loot esperado 300 de energia (drenou o nó), veio %v", wm.Loot.Energy)
+	if wm.Loot.Energy != wantLoot {
+		t.Fatalf("loot esperado %v de energia (drenou o nó), veio %v", wantLoot, wm.Loot.Energy)
 	}
 	if err := svc.ResolveWorldCollect(ctx, m.ID, *wm.CollectUntil); err != nil {
 		t.Fatalf("ResolveWorldCollect: %v", err)

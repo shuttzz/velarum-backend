@@ -16,9 +16,14 @@ const (
 // nodeResources: recursos que um nó pode render (sorteado no spawn).
 var nodeResources = []string{"matter", "energy", "knowledge"}
 
-// NodeAmountForLevel é a quantidade TOTAL de recurso de um nó no nível dado (cresce com o nível).
+// nodeResourceMult escala a quantidade do nó por recurso, ESPELHANDO as taxas de produção da
+// cidade (Viveiro 20 / Fogueira 15 / Pedra da Memória 8). Conhecimento é mais escasso: gera menos
+// na cidade, então seus nós também rendem menos (estilo RoK, onde depósitos de ouro são menores).
+var nodeResourceMult = map[string]float64{"matter": 1.0, "energy": 0.75, "knowledge": 0.4}
+
+// nodeBaseAmount é a quantidade base de um nó por nível (antes do multiplicador de recurso).
 // Dev-scale (em produção pode chegar a dezenas/centenas de milhares — GDD/§memória).
-func NodeAmountForLevel(level int) float64 {
+func nodeBaseAmount(level int) float64 {
 	switch level {
 	case 1:
 		return 300
@@ -27,6 +32,15 @@ func NodeAmountForLevel(level int) float64 {
 	default: // 3+
 		return 1500
 	}
+}
+
+// NodeAmountFor é a quantidade TOTAL de recurso de um nó (cresce com o nível, escala pelo recurso).
+func NodeAmountFor(resource string, level int) float64 {
+	m := nodeResourceMult[resource]
+	if m == 0 {
+		m = 1
+	}
+	return math.Floor(nodeBaseAmount(level) * m)
 }
 
 // MarchSecondsBetween é o tempo de UM trecho de marcha entre dois tiles do mundo (coords reais).

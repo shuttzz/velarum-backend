@@ -36,3 +36,16 @@ func TestCollectPlan(t *testing.T) {
 		})
 	}
 }
+
+// Conhecimento é mais escasso: seus nós rendem MENOS que matéria/energia no mesmo nível (espelha
+// a taxa de produção menor da cidade — estilo RoK). Matéria ≥ energia ≥ conhecimento.
+func TestNodeAmountFor_KnowledgeScarcer(t *testing.T) {
+	for _, lvl := range []int{1, 2, 3} {
+		matter := NodeAmountFor("matter", lvl)
+		energy := NodeAmountFor("energy", lvl)
+		knowledge := NodeAmountFor("knowledge", lvl)
+		if !(matter >= energy && energy > knowledge && knowledge > 0) {
+			t.Errorf("nível %d: esperava matéria(%v) ≥ energia(%v) > conhecimento(%v) > 0", lvl, matter, energy, knowledge)
+		}
+	}
+}

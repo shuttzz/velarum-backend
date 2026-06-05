@@ -219,10 +219,15 @@ CREATE TABLE world_targets (
     level            INTEGER NOT NULL,
     coord_x          INTEGER NOT NULL,
     coord_y          INTEGER NOT NULL,
-    amount_total     DOUBLE PRECISION NOT NULL,           -- capacidade no spawn (cresce com o nível)
-    amount_remaining DOUBLE PRECISION NOT NULL,           -- restante (depleção PARCIAL)
-    status           TEXT NOT NULL DEFAULT 'idle',        -- idle | occupied | depleted
-    occupied_by      UUID,                                -- world_march coletando agora (lock de 1 ocupante)
+    amount_total     DOUBLE PRECISION NOT NULL,           -- nó: capacidade no spawn (0 p/ combate)
+    amount_remaining DOUBLE PRECISION NOT NULL,           -- nó: restante (depleção PARCIAL)
+    def_attack       INTEGER NOT NULL DEFAULT 0,          -- combate (village/creature): ataque agregado da defesa
+    def_hp           INTEGER NOT NULL DEFAULT 0,          -- combate: HP agregado da defesa
+    reward_matter    DOUBLE PRECISION NOT NULL DEFAULT 0, -- combate: loot ao matar
+    reward_energy    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reward_knowledge DOUBLE PRECISION NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'idle',        -- node: idle|occupied|depleted · combate: alive('idle')|depleted(morto)
+    occupied_by      UUID,                                -- nó: world_march coletando agora (lock de 1 ocupante)
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (world_id, coord_x, coord_y)
 );
@@ -237,8 +242,9 @@ CREATE TABLE world_marches (
     city_id       UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
     target_id     UUID NOT NULL REFERENCES world_targets(id),
     troops        JSONB NOT NULL,                         -- {unit_type: count} enviado
-    survivors     JSONB,                                  -- {unit_type: count} que volta (= enviado, sem batalha no SW2a)
-    loot          JSONB,                                  -- recurso coletado (resource.Amounts; vazio se bounce)
+    survivors     JSONB,                                  -- {unit_type: count} que volta (= enviado em nó; pós-combate em raid)
+    loot          JSONB,                                  -- recurso coletado/saqueado (resource.Amounts; vazio se bounce/derrota)
+    attacker_won  BOOLEAN,                                -- raid (village/creature): venceu? NULL = marcha de coleta (nó)
     status        TEXT NOT NULL DEFAULT 'outbound',       -- outbound | collecting | returning | done
     depart_at     TIMESTAMPTZ NOT NULL,
     arrive_at     TIMESTAMPTZ NOT NULL,                   -- chegada ao nó

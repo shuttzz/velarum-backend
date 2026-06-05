@@ -13,7 +13,7 @@ import (
 )
 
 const getWorldMarchForUpdate = `-- name: GetWorldMarchForUpdate :one
-SELECT id, world_id, city_id, target_id, troops, survivors, loot, status, depart_at, arrive_at, collect_until, return_at, created_at FROM world_marches WHERE id = $1 FOR UPDATE
+SELECT id, world_id, city_id, target_id, troops, survivors, loot, attacker_won, status, depart_at, arrive_at, collect_until, return_at, created_at FROM world_marches WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetWorldMarchForUpdate(ctx context.Context, id pgtype.UUID) (WorldMarch, error) {
@@ -27,6 +27,7 @@ func (q *Queries) GetWorldMarchForUpdate(ctx context.Context, id pgtype.UUID) (W
 		&i.Troops,
 		&i.Survivors,
 		&i.Loot,
+		&i.AttackerWon,
 		&i.Status,
 		&i.DepartAt,
 		&i.ArriveAt,
@@ -40,7 +41,7 @@ func (q *Queries) GetWorldMarchForUpdate(ctx context.Context, id pgtype.UUID) (W
 const insertWorldMarch = `-- name: InsertWorldMarch :one
 INSERT INTO world_marches (world_id, city_id, target_id, troops, status, depart_at, arrive_at)
 VALUES ($1, $2, $3, $4, 'outbound', $5, $6)
-RETURNING id, world_id, city_id, target_id, troops, survivors, loot, status, depart_at, arrive_at, collect_until, return_at, created_at
+RETURNING id, world_id, city_id, target_id, troops, survivors, loot, attacker_won, status, depart_at, arrive_at, collect_until, return_at, created_at
 `
 
 type InsertWorldMarchParams struct {
@@ -70,6 +71,7 @@ func (q *Queries) InsertWorldMarch(ctx context.Context, arg InsertWorldMarchPara
 		&i.Troops,
 		&i.Survivors,
 		&i.Loot,
+		&i.AttackerWon,
 		&i.Status,
 		&i.DepartAt,
 		&i.ArriveAt,
@@ -81,7 +83,7 @@ func (q *Queries) InsertWorldMarch(ctx context.Context, arg InsertWorldMarchPara
 }
 
 const listActiveWorldMarches = `-- name: ListActiveWorldMarches :many
-SELECT id, world_id, city_id, target_id, troops, survivors, loot, status, depart_at, arrive_at, collect_until, return_at, created_at FROM world_marches WHERE city_id = $1 AND status <> 'done' ORDER BY arrive_at
+SELECT id, world_id, city_id, target_id, troops, survivors, loot, attacker_won, status, depart_at, arrive_at, collect_until, return_at, created_at FROM world_marches WHERE city_id = $1 AND status <> 'done' ORDER BY arrive_at
 `
 
 func (q *Queries) ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID) ([]WorldMarch, error) {
@@ -101,6 +103,7 @@ func (q *Queries) ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID
 			&i.Troops,
 			&i.Survivors,
 			&i.Loot,
+			&i.AttackerWon,
 			&i.Status,
 			&i.DepartAt,
 			&i.ArriveAt,
@@ -130,6 +133,30 @@ type SetWorldMarchCollectingParams struct {
 
 func (q *Queries) SetWorldMarchCollecting(ctx context.Context, arg SetWorldMarchCollectingParams) error {
 	_, err := q.db.Exec(ctx, setWorldMarchCollecting, arg.ID, arg.Loot, arg.CollectUntil)
+	return err
+}
+
+const setWorldMarchCombatReturning = `-- name: SetWorldMarchCombatReturning :exec
+UPDATE world_marches SET status = 'returning', survivors = $2, loot = $3, attacker_won = $4, return_at = $5 WHERE id = $1
+`
+
+type SetWorldMarchCombatReturningParams struct {
+	ID          pgtype.UUID        `json:"id"`
+	Survivors   []byte             `json:"survivors"`
+	Loot        []byte             `json:"loot"`
+	AttackerWon *bool              `json:"attacker_won"`
+	ReturnAt    pgtype.Timestamptz `json:"return_at"`
+}
+
+// Raid (village/creature): após o combate no destino, volta com sobreviventes + loot + resultado.
+func (q *Queries) SetWorldMarchCombatReturning(ctx context.Context, arg SetWorldMarchCombatReturningParams) error {
+	_, err := q.db.Exec(ctx, setWorldMarchCombatReturning,
+		arg.ID,
+		arg.Survivors,
+		arg.Loot,
+		arg.AttackerWon,
+		arg.ReturnAt,
+	)
 	return err
 }
 

@@ -3,15 +3,49 @@ package config
 import (
 	"math"
 	"math/rand"
+
+	"backend/internal/domain/resource"
 )
 
 // Nós de recurso do MUNDO COMPARTILHADO (SW2). Modelo RoK: tiles farmáveis sem dono; qualquer um
 // marcha até lá, coleta ao longo do tempo (∝ carga÷taxa, taxa POR TROPA), volta com loot; depleção
 // PARCIAL; respawnam ao zerar. 1 ocupante por vez. Valores dev-scale (tunáveis).
 const (
-	NodesPerRegion  = 6  // nós vivos mantidos em cada região
-	nodeSpawnRadius = 10 // raio (hex) de espalhamento dos nós em torno do centro da região
+	NodesPerRegion     = 6  // nós de recurso vivos mantidos por região
+	VillagesPerRegion  = 3  // aldeias hostis (combate one-shot) por região
+	CreaturesPerRegion = 3  // criaturas da Lacuna (combate one-shot) por região
+	nodeSpawnRadius    = 10 // raio (hex) de espalhamento dos alvos em torno do centro da região
 )
+
+// CombatTargetFor devolve a defesa agregada (ataque, HP) e o loot de um alvo de COMBATE
+// (village|creature) no nível dado. Aldeia = equilibrada; criatura = mais "tanque" (HP), loot só
+// de matéria. Dev-scale: o nível 1 cai com um pelotão inicial; sobe ~1.6×def / 1.5×loot por nível.
+func CombatTargetFor(kind string, level int) (defAttack, defHp int, reward resource.Amounts) {
+	df := math.Pow(1.6, float64(level-1))
+	rf := math.Pow(1.5, float64(level-1))
+	if kind == "creature" {
+		return int(math.Round(30 * df)), int(math.Round(180 * df)), resource.Amounts{Matter: math.Round(120 * rf)}
+	}
+	// village (padrão)
+	return int(math.Round(40 * df)), int(math.Round(120 * df)), resource.Amounts{Matter: math.Round(80 * rf), Energy: math.Round(40 * rf)}
+}
+
+// RandomNodeResource sorteia o recurso de um nó.
+func RandomNodeResource(rng *rand.Rand) string {
+	return nodeResources[rng.Intn(len(nodeResources))]
+}
+
+// RandomTargetLevel sorteia um nível 1..3 para um alvo.
+func RandomTargetLevel(rng *rand.Rand) int {
+	return 1 + rng.Intn(3)
+}
+
+// PlaceOneNearAnyRegion acha um tile livre em torno de uma região ALEATÓRIA (spawn/top-up de
+// qualquer alvo). Marca o tile como ocupado em `taken`.
+func PlaceOneNearAnyRegion(rng *rand.Rand, taken map[[2]int]bool) (x, y int, ok bool) {
+	region := WorldRegions[rng.Intn(len(WorldRegions))]
+	return placeOneCoord(rng, region.CenterX, region.CenterY, taken)
+}
 
 // nodeResources: recursos que um nó pode render (sorteado no spawn).
 var nodeResources = []string{"matter", "energy", "knowledge"}
@@ -86,20 +120,6 @@ type NodeSpawn struct {
 	Resource    string
 }
 
-// PlaceWorldNodes gera `NodesPerRegion` nós ESPALHADOS em torno do centro de CADA região, evitando
-// coords já ocupadas (cidades/outros nós). Nível e recurso são sorteados pelo rng.
-func PlaceWorldNodes(rng *rand.Rand, taken map[[2]int]bool) []NodeSpawn {
-	out := make([]NodeSpawn, 0, NodesPerRegion*len(WorldRegions))
-	for _, region := range WorldRegions {
-		for i := 0; i < NodesPerRegion; i++ {
-			if sp, ok := placeOneNode(rng, region.CenterX, region.CenterY, taken); ok {
-				out = append(out, sp)
-			}
-		}
-	}
-	return out
-}
-
 // PlaceRespawnNode escolhe uma região ALEATÓRIA e um tile livre nela para o respawn de um nó.
 func PlaceRespawnNode(rng *rand.Rand, taken map[[2]int]bool) (NodeSpawn, bool) {
 	region := WorldRegions[rng.Intn(len(WorldRegions))]
@@ -107,16 +127,25 @@ func PlaceRespawnNode(rng *rand.Rand, taken map[[2]int]bool) (NodeSpawn, bool) {
 }
 
 func placeOneNode(rng *rand.Rand, cx, cy int, taken map[[2]int]bool) (NodeSpawn, bool) {
+	x, y, ok := placeOneCoord(rng, cx, cy, taken)
+	if !ok {
+		return NodeSpawn{}, false
+	}
+	return NodeSpawn{X: x, Y: y, Level: RandomTargetLevel(rng), Resource: RandomNodeResource(rng)}, true
+}
+
+// placeOneCoord acha um tile livre (não em `taken`) espalhado em torno de (cx,cy); marca-o.
+func placeOneCoord(rng *rand.Rand, cx, cy int, taken map[[2]int]bool) (x, y int, ok bool) {
 	for attempt := 0; attempt < 200; attempt++ {
 		ang := rng.Float64() * 2 * math.Pi
 		dist := rng.Float64() * float64(nodeSpawnRadius)
-		x := cx + int(dist*math.Cos(ang))
-		y := cy + int(dist*math.Sin(ang))
-		if taken[[2]int{x, y}] {
+		px := cx + int(dist*math.Cos(ang))
+		py := cy + int(dist*math.Sin(ang))
+		if taken[[2]int{px, py}] {
 			continue
 		}
-		taken[[2]int{x, y}] = true
-		return NodeSpawn{X: x, Y: y, Level: 1 + rng.Intn(3), Resource: nodeResources[rng.Intn(len(nodeResources))]}, true
+		taken[[2]int{px, py}] = true
+		return px, py, true
 	}
-	return NodeSpawn{}, false
+	return 0, 0, false
 }

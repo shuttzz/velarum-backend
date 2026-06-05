@@ -13,6 +13,7 @@ import (
 
 	"backend/internal/config"
 	"backend/internal/db"
+	"backend/internal/domain/combat"
 	"backend/internal/domain/resource"
 )
 
@@ -49,26 +50,42 @@ type collectReport struct {
 	Bounced   bool           `json:"bounced"` // true = nó ocupado/esgotado ao chegar; voltou sem coletar
 }
 
-// WorldTarget é a visão de domínio de um alvo PvE compartilhado (SW2: nó de recurso).
-type WorldTarget struct {
-	ID              string  `json:"id"`
-	Kind            string  `json:"kind"`
-	Resource        string  `json:"resource"`
-	Level           int     `json:"level"`
-	CoordX          int     `json:"coord_x"`
-	CoordY          int     `json:"coord_y"`
-	AmountTotal     float64 `json:"amount_total"`
-	AmountRemaining float64 `json:"amount_remaining"`
-	Status          string  `json:"status"`
+const reportTypeRaid = "raid"
+
+// raidReport é o payload de um relatório de ataque a uma aldeia/criatura (combate one-shot).
+type raidReport struct {
+	TargetID   string           `json:"target_id"`
+	TargetKind string           `json:"target_kind"` // village | creature
+	Won        bool             `json:"won"`
+	Loot       resource.Amounts `json:"loot"`
+	Sent       map[string]int   `json:"sent"`
+	Losses     map[string]int   `json:"losses"`
 }
 
-// WorldMarch é a visão de domínio de uma marcha a um nó (ida → coleta → volta).
+// WorldTarget é a visão de domínio de um alvo PvE compartilhado (nó de recurso OU aldeia/criatura).
+type WorldTarget struct {
+	ID              string           `json:"id"`
+	Kind            string           `json:"kind"` // node | village | creature
+	Resource        string           `json:"resource"`
+	Level           int              `json:"level"`
+	CoordX          int              `json:"coord_x"`
+	CoordY          int              `json:"coord_y"`
+	AmountTotal     float64          `json:"amount_total"`
+	AmountRemaining float64          `json:"amount_remaining"`
+	DefAttack       int              `json:"def_attack"` // combate: defesa agregada
+	DefHP           int              `json:"def_hp"`
+	Reward          resource.Amounts `json:"reward"` // combate: loot ao matar
+	Status          string           `json:"status"`
+}
+
+// WorldMarch é a visão de domínio de uma marcha a um alvo (ida → coleta/combate → volta).
 type WorldMarch struct {
 	ID           string           `json:"id"`
 	TargetID     string           `json:"target_id"`
 	Status       string           `json:"status"` // outbound | collecting | returning | done
 	Troops       map[string]int   `json:"troops"`
 	Loot         resource.Amounts `json:"loot"`
+	AttackerWon  *bool            `json:"attacker_won"` // raid: venceu? nil = marcha de coleta (nó)
 	ArriveAt     time.Time        `json:"arrive_at"`
 	CollectUntil *time.Time       `json:"collect_until"`
 	ReturnAt     *time.Time       `json:"return_at"`
@@ -94,16 +111,37 @@ func (s *Service) WorldTargets(ctx context.Context, now time.Time) ([]WorldTarge
 	return out, nil
 }
 
-// ensureWorldTargets semeia o conjunto inicial de nós (uma vez por mundo). Serializa pelo lock do
-// mundo (FOR UPDATE) para evitar seed concorrente. Respawn mantém a contagem estável depois disso.
+// targetKinds: tipos de alvo mantidos no mundo e quantos por região (mantenedor de população).
+var targetKinds = []struct {
+	kind      string
+	perRegion int
+}{
+	{"node", config.NodesPerRegion},
+	{"village", config.VillagesPerRegion},
+	{"creature", config.CreaturesPerRegion},
+}
+
+// ensureWorldTargets mantém a POPULAÇÃO de alvos do mundo: repõe (spawn em tile livre) o que faltar
+// de cada tipo até o teto por-região. Roda lazy a cada listagem; só pega o lock do mundo quando
+// realmente precisa repor (após um alvo de combate morrer ou no 1º seed). Nós respawnam in-place
+// (não entram aqui); aldeias/criaturas mortas viram 'depleted' e são repostas em outro lugar.
 func (s *Service) ensureWorldTargets(ctx context.Context, worldUUID pgtype.UUID, now time.Time) error {
-	n, err := s.q.CountWorldTargets(ctx, worldUUID)
-	if err != nil {
-		return err
+	regions := len(config.WorldRegions)
+	need := false
+	for _, tk := range targetKinds {
+		n, err := s.q.CountAliveWorldTargetsByKind(ctx, db.CountAliveWorldTargetsByKindParams{WorldID: worldUUID, Kind: tk.kind})
+		if err != nil {
+			return err
+		}
+		if int(n) < tk.perRegion*regions {
+			need = true
+			break
+		}
 	}
-	if n > 0 {
+	if !need {
 		return nil
 	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -114,25 +152,34 @@ func (s *Service) ensureWorldTargets(ctx context.Context, worldUUID pgtype.UUID,
 	if _, err := q.GetWorldForUpdate(ctx, worldUUID); err != nil {
 		return err
 	}
-	again, err := q.CountWorldTargets(ctx, worldUUID)
-	if err != nil {
-		return err
-	}
-	if again > 0 {
-		return tx.Commit(ctx) // outra requisição semeou
-	}
-
 	taken, err := worldTakenCoords(ctx, q, worldUUID)
 	if err != nil {
 		return err
 	}
 	rng := rand.New(rand.NewSource(now.UnixNano())) //nolint:gosec // placement, não-cripto
-	for _, sp := range config.PlaceWorldNodes(rng, taken) {
-		if _, err := q.InsertWorldTarget(ctx, db.InsertWorldTargetParams{
-			WorldID: worldUUID, Kind: "node", Resource: sp.Resource, Level: int32(sp.Level),
-			CoordX: int32(sp.X), CoordY: int32(sp.Y), AmountTotal: config.NodeAmountFor(sp.Resource, sp.Level),
-		}); err != nil {
-			return fmt.Errorf("semear nó: %w", err)
+	for _, tk := range targetKinds {
+		n, err := q.CountAliveWorldTargetsByKind(ctx, db.CountAliveWorldTargetsByKindParams{WorldID: worldUUID, Kind: tk.kind})
+		if err != nil {
+			return err
+		}
+		for i := int(n); i < tk.perRegion*regions; i++ {
+			x, y, ok := config.PlaceOneNearAnyRegion(rng, taken)
+			if !ok {
+				break
+			}
+			level := config.RandomTargetLevel(rng)
+			p := db.InsertWorldTargetParams{WorldID: worldUUID, Kind: tk.kind, Level: int32(level), CoordX: int32(x), CoordY: int32(y)}
+			if tk.kind == "node" {
+				p.Resource = config.RandomNodeResource(rng)
+				p.AmountTotal = config.NodeAmountFor(p.Resource, level)
+			} else {
+				defA, defH, reward := config.CombatTargetFor(tk.kind, level)
+				p.DefAttack, p.DefHp = int32(defA), int32(defH)
+				p.RewardMatter, p.RewardEnergy, p.RewardKnowledge = reward.Matter, reward.Energy, reward.Knowledge
+			}
+			if _, err := q.InsertWorldTarget(ctx, p); err != nil {
+				return fmt.Errorf("spawn %s: %w", tk.kind, err)
+			}
 		}
 	}
 	return tx.Commit(ctx)
@@ -177,11 +224,11 @@ func (s *Service) StartCollect(ctx context.Context, cityID, targetID string, tro
 	if err != nil {
 		return WorldMarch{}, ErrTargetNotFound
 	}
-	if target.Status == "depleted" || target.AmountRemaining <= 0 {
+	if target.Status == "depleted" || (target.Kind == "node" && target.AmountRemaining <= 0) {
 		return WorldMarch{}, ErrTargetDepleted
 	}
 
-	// Fila de expedições (províncias + nós) limitada por era — mesma lane.
+	// Fila de expedições (províncias + nós/alvos) limitada por era — mesma lane.
 	n, err := activeExpeditions(ctx, q, id)
 	if err != nil {
 		return WorldMarch{}, err
@@ -267,6 +314,11 @@ func (s *Service) ResolveWorldArrival(ctx context.Context, marchID string, now t
 	}
 	backDur := time.Duration(config.MarchSecondsBetween(int(cityRow.CoordX), int(cityRow.CoordY), int(target.CoordX), int(target.CoordY))) * time.Second
 
+	// Aldeias/criaturas: combate one-shot (não há coleta/ocupação).
+	if target.Kind != "node" {
+		return s.resolveCombatArrival(ctx, q, tx, m, target, now.Add(backDur))
+	}
+
 	busy := target.OccupiedBy.Valid
 	empty := target.Status == "depleted" || target.AmountRemaining <= 0
 
@@ -313,6 +365,52 @@ func (s *Service) bounceWorldMarch(ctx context.Context, q *db.Queries, tx pgx.Tx
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// resolveCombatArrival resolve a chegada a uma ALDEIA/CRIATURA: auto-resolve determinístico contra
+// a defesa do alvo. Vitória → loot + alvo consumido (status depleted; reposto em outro lugar pelo
+// mantenedor de população). Derrota → sobreviventes voltam sem loot. Se o alvo JÁ morreu (outra
+// marcha chegou antes), volta sem combater (bounce). Commita.
+func (s *Service) resolveCombatArrival(ctx context.Context, q *db.Queries, tx pgx.Tx, m db.WorldMarch, target db.WorldTarget, returnAt time.Time) error {
+	// Disputa: quem chega primeiro mata; se o alvo já morreu, esta marcha volta sem combater.
+	if target.Status == "depleted" {
+		return s.bounceWorldMarch(ctx, q, tx, m, returnAt)
+	}
+
+	var troops map[string]int
+	_ = json.Unmarshal(m.Troops, &troops)
+	out := combat.AutoResolve(buildStacks(troops), combat.Defender{Attack: int(target.DefAttack), HP: int(target.DefHp)})
+
+	loot := resource.Amounts{}
+	if out.AttackerWins {
+		loot = resource.Amounts{Matter: target.RewardMatter, Energy: target.RewardEnergy, Knowledge: target.RewardKnowledge}
+		if err := q.SetWorldTargetDepleted(ctx, target.ID); err != nil { // alvo consumido
+			return err
+		}
+	}
+	survJSON, _ := json.Marshal(out.Survivors)
+	lootJSON, _ := json.Marshal(loot)
+	won := out.AttackerWins
+	if err := q.SetWorldMarchCombatReturning(ctx, db.SetWorldMarchCombatReturningParams{
+		ID: m.ID, Survivors: survJSON, Loot: lootJSON, AttackerWon: &won, ReturnAt: pgTime(returnAt),
+	}); err != nil {
+		return err
+	}
+	if err := scheduleWorldEvent(ctx, q, EventWorldReturn, db.UUIDString(m.ID), returnAt); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// buildStacks converte {unit_type: count} nos stacks de combate (stats do catálogo de unidades).
+func buildStacks(troops map[string]int) []combat.Stack {
+	stacks := make([]combat.Stack, 0, len(troops))
+	for ut, c := range troops {
+		if def, ok := config.UnitByKey(ut); ok {
+			stacks = append(stacks, combat.Stack{Key: ut, Attack: def.Attack, HP: def.HP, Count: c})
+		}
+	}
+	return stacks
 }
 
 // ResolveWorldCollectEvent é o handler do scheduler para "world.collect".
@@ -458,10 +556,33 @@ func (s *Service) ResolveWorldReturn(ctx context.Context, marchID string, now ti
 
 	var sent map[string]int
 	_ = json.Unmarshal(m.Troops, &sent)
+	playerID := cityPlayerID(ctx, q, m.CityID)
+
+	if m.AttackerWon != nil {
+		// Raid (aldeia/criatura): relatório de combate (vitória/derrota + loot + perdas).
+		losses := map[string]int{}
+		for ut, c := range sent {
+			if d := c - survivors[ut]; d > 0 {
+				losses[ut] = d
+			}
+		}
+		kind := ""
+		if tgt, err := q.GetWorldTargetForUpdate(ctx, m.TargetID); err == nil {
+			kind = tgt.Kind
+		}
+		rrJSON, _ := json.Marshal(raidReport{
+			TargetID: db.UUIDString(m.TargetID), TargetKind: kind, Won: *m.AttackerWon, Loot: loot, Sent: sent, Losses: losses,
+		})
+		if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: m.WorldID, PlayerID: playerID, Type: reportTypeRaid, Payload: rrJSON}); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+
 	crJSON, _ := json.Marshal(collectReport{
 		TargetID: db.UUIDString(m.TargetID), Resource: resourceNameOf(loot), Collected: collected, Sent: sent, Bounced: collected <= 0,
 	})
-	if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: m.WorldID, PlayerID: cityPlayerID(ctx, q, m.CityID), Type: reportTypeCollection, Payload: crJSON}); err != nil {
+	if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: m.WorldID, PlayerID: playerID, Type: reportTypeCollection, Payload: crJSON}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -498,12 +619,14 @@ func worldTakenCoords(ctx context.Context, q *db.Queries, worldUUID pgtype.UUID)
 	for _, c := range cities {
 		taken[[2]int{int(c.CoordX), int(c.CoordY)}] = true
 	}
-	targets, err := q.ListWorldTargets(ctx, worldUUID)
+	// TODOS os alvos (inclusive depletados) — o tile de um alvo morto segue ocupado (a linha
+	// permanece por causa da FK das world_marches) até futura limpeza/reciclagem.
+	coords, err := q.ListWorldTargetCoords(ctx, worldUUID)
 	if err != nil {
 		return nil, err
 	}
-	for _, t := range targets {
-		taken[[2]int{int(t.CoordX), int(t.CoordY)}] = true
+	for _, c := range coords {
+		taken[[2]int{int(c.CoordX), int(c.CoordY)}] = true
 	}
 	return taken, nil
 }
@@ -544,13 +667,16 @@ func worldTargetToDomain(t db.WorldTarget) WorldTarget {
 	return WorldTarget{
 		ID: db.UUIDString(t.ID), Kind: t.Kind, Resource: t.Resource, Level: int(t.Level),
 		CoordX: int(t.CoordX), CoordY: int(t.CoordY),
-		AmountTotal: t.AmountTotal, AmountRemaining: t.AmountRemaining, Status: t.Status,
+		AmountTotal: t.AmountTotal, AmountRemaining: t.AmountRemaining,
+		DefAttack: int(t.DefAttack), DefHP: int(t.DefHp),
+		Reward: resource.Amounts{Matter: t.RewardMatter, Energy: t.RewardEnergy, Knowledge: t.RewardKnowledge},
+		Status: t.Status,
 	}
 }
 
 func worldMarchToDomain(m db.WorldMarch) WorldMarch {
 	dm := WorldMarch{
-		ID: db.UUIDString(m.ID), TargetID: db.UUIDString(m.TargetID), Status: m.Status, ArriveAt: m.ArriveAt,
+		ID: db.UUIDString(m.ID), TargetID: db.UUIDString(m.TargetID), Status: m.Status, AttackerWon: m.AttackerWon, ArriveAt: m.ArriveAt,
 	}
 	_ = json.Unmarshal(m.Troops, &dm.Troops)
 	if len(m.Loot) > 0 {

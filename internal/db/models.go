@@ -184,6 +184,7 @@ type WorldMarch struct {
 	Troops       []byte             `json:"troops"`
 	Survivors    []byte             `json:"survivors"`
 	Loot         []byte             `json:"loot"`
+	AttackerWon  *bool              `json:"attacker_won"`
 	Status       string             `json:"status"`
 	DepartAt     time.Time          `json:"depart_at"`
 	ArriveAt     time.Time          `json:"arrive_at"`
@@ -202,6 +203,11 @@ type WorldTarget struct {
 	CoordY          int32       `json:"coord_y"`
 	AmountTotal     float64     `json:"amount_total"`
 	AmountRemaining float64     `json:"amount_remaining"`
+	DefAttack       int32       `json:"def_attack"`
+	DefHp           int32       `json:"def_hp"`
+	RewardMatter    float64     `json:"reward_matter"`
+	RewardEnergy    float64     `json:"reward_energy"`
+	RewardKnowledge float64     `json:"reward_knowledge"`
 	Status          string      `json:"status"`
 	OccupiedBy      pgtype.UUID `json:"occupied_by"`
 	CreatedAt       time.Time   `json:"created_at"`

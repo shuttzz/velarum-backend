@@ -37,6 +37,27 @@ func TestCollectPlan(t *testing.T) {
 	}
 }
 
+// Alvos de combate: criatura é mais "tanque" (HP) que aldeia no mesmo nível; defesa e loot crescem
+// com o nível. (Sanity da tabela CombatTargetFor.)
+func TestCombatTargetFor(t *testing.T) {
+	vA1, vH1, vR1 := CombatTargetFor("village", 1)
+	_, cH1, cR1 := CombatTargetFor("creature", 1)
+	if cH1 <= vH1 {
+		t.Errorf("criatura deveria ter mais HP que aldeia no nível 1: criatura %d vs aldeia %d", cH1, vH1)
+	}
+	if vA1 <= 0 || vH1 <= 0 || vR1.Matter <= 0 {
+		t.Errorf("aldeia nível 1 deveria ter defesa e loot positivos: atk=%d hp=%d loot=%+v", vA1, vH1, vR1)
+	}
+	if cR1.Matter <= 0 {
+		t.Errorf("criatura nível 1 deveria render matéria: %+v", cR1)
+	}
+	// Escala por nível: nível 3 mais forte e mais recompensador que nível 1.
+	vA3, vH3, vR3 := CombatTargetFor("village", 3)
+	if !(vA3 > vA1 && vH3 > vH1 && vR3.Matter > vR1.Matter) {
+		t.Errorf("aldeia nível 3 deveria superar nível 1: atk %d>%d hp %d>%d loot %v>%v", vA3, vA1, vH3, vH1, vR3.Matter, vR1.Matter)
+	}
+}
+
 // Conhecimento é mais escasso: seus nós rendem MENOS que matéria/energia no mesmo nível (espelha
 // a taxa de produção menor da cidade — estilo RoK). Matéria ≥ energia ≥ conhecimento.
 func TestNodeAmountFor_KnowledgeScarcer(t *testing.T) {

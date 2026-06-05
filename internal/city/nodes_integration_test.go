@@ -46,6 +46,151 @@ func newNode(t *testing.T, q *db.Queries, ctx context.Context, res string, level
 	return n
 }
 
+// newCombatTarget cria uma aldeia/criatura (alvo de combate) direto no banco.
+func newCombatTarget(t *testing.T, q *db.Queries, ctx context.Context, kind string, level, x, y int) db.WorldTarget {
+	t.Helper()
+	worldUUID, _ := db.ParseUUID(config.DefaultWorldID)
+	defA, defH, reward := config.CombatTargetFor(kind, level)
+	n, err := q.InsertWorldTarget(ctx, db.InsertWorldTargetParams{
+		WorldID: worldUUID, Kind: kind, Level: int32(level), CoordX: int32(x), CoordY: int32(y),
+		DefAttack: int32(defA), DefHp: int32(defH), RewardMatter: reward.Matter, RewardEnergy: reward.Energy, RewardKnowledge: reward.Knowledge,
+	})
+	if err != nil {
+		t.Fatalf("InsertWorldTarget(combat): %v", err)
+	}
+	return n
+}
+
+// Raid VITORIOSA numa aldeia: 20 lanceiros batem a defesa nível 1 → loot + alvo consumido
+// (depleted) + sobreviventes voltam + relatório de raid.
+func TestRaidWin_Integration(t *testing.T) {
+	svc, pool, ctx, now := setupNodeTest(t)
+	q := db.New(pool)
+	c := enterTestGame(t, svc, pool, "brevali", now)
+	cityUUID, _ := db.ParseUUID(c.ID)
+	if err := q.AddCityTroops(ctx, db.AddCityTroopsParams{CityID: cityUUID, UnitType: "lanceiro", Count: 20}); err != nil {
+		t.Fatalf("AddCityTroops: %v", err)
+	}
+	target := newCombatTarget(t, q, ctx, "village", 1, c.CoordX+100, c.CoordY)
+	_, _, reward := config.CombatTargetFor("village", 1)
+
+	m, err := svc.StartCollect(ctx, c.ID, db.UUIDString(target.ID), map[string]int{"lanceiro": 20}, now)
+	if err != nil {
+		t.Fatalf("StartCollect: %v", err)
+	}
+	if err := svc.ResolveWorldArrival(ctx, m.ID, m.ArriveAt); err != nil {
+		t.Fatalf("ResolveWorldArrival: %v", err)
+	}
+	loaded, _ := svc.LoadCity(ctx, c.ID, m.ArriveAt)
+	wm := loaded.WorldMarches[0]
+	if wm.Status != "returning" || wm.AttackerWon == nil || !*wm.AttackerWon {
+		t.Fatalf("esperava raid vitoriosa voltando: %+v (won=%v)", wm, wm.AttackerWon)
+	}
+	if wm.Loot.Matter != reward.Matter || wm.Loot.Energy != reward.Energy {
+		t.Fatalf("loot esperado %+v, veio %+v", reward, wm.Loot)
+	}
+	got, _ := q.GetWorldTargetForUpdate(ctx, target.ID)
+	if got.Status != "depleted" {
+		t.Fatalf("alvo deveria estar consumido (depleted), veio %q", got.Status)
+	}
+
+	if err := svc.ResolveWorldReturn(ctx, m.ID, *wm.ReturnAt); err != nil {
+		t.Fatalf("ResolveWorldReturn: %v", err)
+	}
+	loaded, _ = svc.LoadCity(ctx, c.ID, *wm.ReturnAt)
+	if len(loaded.Troops) != 1 || loaded.Troops[0].Count <= 0 || loaded.Troops[0].Count > 20 {
+		t.Fatalf("sobreviventes (1..20) deveriam voltar: %+v", loaded.Troops)
+	}
+	if loaded.Resources.Matter != 500+reward.Matter {
+		t.Fatalf("loot não creditado: matéria %v, quero %v", loaded.Resources.Matter, 500+reward.Matter)
+	}
+	reps, _ := svc.ListReports(ctx, c.ID)
+	if len(reps) != 1 || reps[0].Type != "raid" {
+		t.Fatalf("esperava 1 relatório de raid, veio %+v", reps)
+	}
+}
+
+// Raid DERROTA: pelotão fraco contra criatura nível 3 → perde, sem loot, alvo segue vivo.
+func TestRaidLose_Integration(t *testing.T) {
+	svc, pool, ctx, now := setupNodeTest(t)
+	q := db.New(pool)
+	c := enterTestGame(t, svc, pool, "brevali", now)
+	cityUUID, _ := db.ParseUUID(c.ID)
+	if err := q.AddCityTroops(ctx, db.AddCityTroopsParams{CityID: cityUUID, UnitType: "lanceiro", Count: 3}); err != nil {
+		t.Fatalf("AddCityTroops: %v", err)
+	}
+	target := newCombatTarget(t, q, ctx, "creature", 3, c.CoordX+100, c.CoordY)
+
+	m, err := svc.StartCollect(ctx, c.ID, db.UUIDString(target.ID), map[string]int{"lanceiro": 3}, now)
+	if err != nil {
+		t.Fatalf("StartCollect: %v", err)
+	}
+	if err := svc.ResolveWorldArrival(ctx, m.ID, m.ArriveAt); err != nil {
+		t.Fatalf("ResolveWorldArrival: %v", err)
+	}
+	loaded, _ := svc.LoadCity(ctx, c.ID, m.ArriveAt)
+	wm := loaded.WorldMarches[0]
+	if wm.AttackerWon == nil || *wm.AttackerWon {
+		t.Fatalf("esperava derrota: %+v", wm)
+	}
+	if wm.Loot.Matter != 0 {
+		t.Fatalf("derrota não deveria ter loot: %+v", wm.Loot)
+	}
+	got, _ := q.GetWorldTargetForUpdate(ctx, target.ID)
+	if got.Status == "depleted" {
+		t.Fatal("alvo NÃO deveria ser consumido numa derrota")
+	}
+}
+
+// Disputa: A mata o alvo; B (que já estava a caminho) chega depois → volta sem combater (bounce).
+func TestRaidBounce_Integration(t *testing.T) {
+	svc, pool, ctx, now := setupNodeTest(t)
+	q := db.New(pool)
+	a := enterTestGame(t, svc, pool, "brevali", now)
+	b := enterTestGame(t, svc, pool, "brevali", now)
+	aUUID, _ := db.ParseUUID(a.ID)
+	bUUID, _ := db.ParseUUID(b.ID)
+	if err := q.AddCityTroops(ctx, db.AddCityTroopsParams{CityID: aUUID, UnitType: "lanceiro", Count: 20}); err != nil {
+		t.Fatalf("AddCityTroops A: %v", err)
+	}
+	if err := q.AddCityTroops(ctx, db.AddCityTroopsParams{CityID: bUUID, UnitType: "lanceiro", Count: 20}); err != nil {
+		t.Fatalf("AddCityTroops B: %v", err)
+	}
+	target := newCombatTarget(t, q, ctx, "village", 1, a.CoordX+100, a.CoordY)
+
+	// Ambos partem com o alvo VIVO.
+	ma, err := svc.StartCollect(ctx, a.ID, db.UUIDString(target.ID), map[string]int{"lanceiro": 20}, now)
+	if err != nil {
+		t.Fatalf("StartCollect A: %v", err)
+	}
+	mb, err := svc.StartCollect(ctx, b.ID, db.UUIDString(target.ID), map[string]int{"lanceiro": 20}, now)
+	if err != nil {
+		t.Fatalf("StartCollect B: %v", err)
+	}
+	// A chega e mata; B chega depois e dá bounce.
+	if err := svc.ResolveWorldArrival(ctx, ma.ID, ma.ArriveAt); err != nil {
+		t.Fatalf("ResolveWorldArrival A: %v", err)
+	}
+	if err := svc.ResolveWorldArrival(ctx, mb.ID, mb.ArriveAt); err != nil {
+		t.Fatalf("ResolveWorldArrival B: %v", err)
+	}
+	loaded, _ := svc.LoadCity(ctx, b.ID, mb.ArriveAt)
+	wm := loaded.WorldMarches[0]
+	if wm.Status != "returning" || wm.AttackerWon != nil {
+		t.Fatalf("B deveria dar bounce (sem combate): %+v", wm)
+	}
+	if wm.Loot.Matter != 0 || wm.Loot.Energy != 0 {
+		t.Fatalf("B não deveria ter loot (bounce): %+v", wm.Loot)
+	}
+	if err := svc.ResolveWorldReturn(ctx, mb.ID, *wm.ReturnAt); err != nil {
+		t.Fatalf("ResolveWorldReturn B: %v", err)
+	}
+	loaded, _ = svc.LoadCity(ctx, b.ID, *wm.ReturnAt)
+	if len(loaded.Troops) != 1 || loaded.Troops[0].Count != 20 {
+		t.Fatalf("20 lanceiros de B deveriam voltar intactos: %+v", loaded.Troops)
+	}
+}
+
 // Loop completo de coleta com DEPLEÇÃO PARCIAL: 20 lanceiros (carga 500) num nó nível 3 (1500) →
 // coleta 500, restam 1000; tropas voltam; loot creditado; relatório gerado.
 func TestCollectFlow_Integration(t *testing.T) {

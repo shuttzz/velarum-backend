@@ -15,5 +15,9 @@ UPDATE world_marches SET status = 'collecting', loot = $2, collect_until = $3 WH
 -- name: SetWorldMarchReturning :exec
 UPDATE world_marches SET status = 'returning', survivors = $2, return_at = $3 WHERE id = $1;
 
+-- name: SetWorldMarchCombatReturning :exec
+-- Raid (village/creature): após o combate no destino, volta com sobreviventes + loot + resultado.
+UPDATE world_marches SET status = 'returning', survivors = $2, loot = $3, attacker_won = $4, return_at = $5 WHERE id = $1;
+
 -- name: SetWorldMarchDone :exec
 UPDATE world_marches SET status = 'done' WHERE id = $1;

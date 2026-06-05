@@ -17,6 +17,7 @@ type Querier interface {
 	CancelRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteBuildQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
+	CountAliveWorldTargetsByKind(ctx context.Context, arg CountAliveWorldTargetsByKindParams) (int64, error)
 	CountPlayerProvinces(ctx context.Context, playerID pgtype.UUID) (int64, error)
 	CountWorldTargets(ctx context.Context, worldID pgtype.UUID) (int64, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
@@ -69,6 +70,8 @@ type Querier interface {
 	ListPlayerReports(ctx context.Context, playerID pgtype.UUID) ([]Report, error)
 	ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCitiesRow, error)
 	ListWorldCityCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCityCoordsRow, error)
+	// Coords de TODOS os alvos (inclusive depletados) — para evitar colisão de posição ao spawnar.
+	ListWorldTargetCoords(ctx context.Context, worldID pgtype.UUID) ([]ListWorldTargetCoordsRow, error)
 	ListWorldTargets(ctx context.Context, worldID pgtype.UUID) ([]WorldTarget, error)
 	MarkAllReportsRead(ctx context.Context, playerID pgtype.UUID) error
 	MarkEventProcessed(ctx context.Context, id pgtype.UUID) error
@@ -84,8 +87,12 @@ type Querier interface {
 	SetMarchResult(ctx context.Context, arg SetMarchResultParams) error
 	SetProvinceConquered(ctx context.Context, arg SetProvinceConqueredParams) error
 	SetWorldMarchCollecting(ctx context.Context, arg SetWorldMarchCollectingParams) error
+	// Raid (village/creature): após o combate no destino, volta com sobreviventes + loot + resultado.
+	SetWorldMarchCombatReturning(ctx context.Context, arg SetWorldMarchCombatReturningParams) error
 	SetWorldMarchDone(ctx context.Context, id pgtype.UUID) error
 	SetWorldMarchReturning(ctx context.Context, arg SetWorldMarchReturningParams) error
+	// Marca o alvo como consumido/morto (combate vencido ou nó zerado sem respawn).
+	SetWorldTargetDepleted(ctx context.Context, id pgtype.UUID) error
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error

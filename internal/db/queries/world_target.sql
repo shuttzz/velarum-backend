@@ -4,13 +4,25 @@ SELECT * FROM world_targets WHERE world_id = $1 AND status <> 'depleted' ORDER B
 -- name: CountWorldTargets :one
 SELECT count(*) FROM world_targets WHERE world_id = $1;
 
+-- name: CountAliveWorldTargetsByKind :one
+SELECT count(*) FROM world_targets WHERE world_id = $1 AND kind = $2 AND status <> 'depleted';
+
+-- name: ListWorldTargetCoords :many
+-- Coords de TODOS os alvos (inclusive depletados) — para evitar colisão de posição ao spawnar.
+SELECT coord_x, coord_y FROM world_targets WHERE world_id = $1;
+
 -- name: InsertWorldTarget :one
-INSERT INTO world_targets (world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+INSERT INTO world_targets (world_id, kind, resource, level, coord_x, coord_y, amount_total, amount_remaining,
+    def_attack, def_hp, reward_matter, reward_energy, reward_knowledge)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: GetWorldTargetForUpdate :one
 SELECT * FROM world_targets WHERE id = $1 FOR UPDATE;
+
+-- name: SetWorldTargetDepleted :exec
+-- Marca o alvo como consumido/morto (combate vencido ou nó zerado sem respawn).
+UPDATE world_targets SET status = 'depleted', occupied_by = NULL WHERE id = $1;
 
 -- name: ReserveWorldTarget :exec
 -- Reserva o nó para coleta: decrementa o restante e trava 1 ocupante (occupied_by = world_march).

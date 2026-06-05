@@ -35,6 +35,7 @@ services:
       - "5433:5432" # host 5433 -> container 5432 (evita conflito com Postgres já rodando na 5432)
     volumes:
       - pg-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro # cria o banco de teste `velarum_test` na 1ª init
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U velarum -d velarum"]
       interval: 2s

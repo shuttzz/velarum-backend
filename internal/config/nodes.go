@@ -15,7 +15,10 @@ const (
 	NodesPerRegion     = 6  // nós de recurso vivos mantidos por região
 	VillagesPerRegion  = 3  // aldeias hostis (combate one-shot) por região
 	CreaturesPerRegion = 3  // criaturas da Lacuna (combate one-shot) por região
-	nodeSpawnRadius    = 10 // raio (hex) de espalhamento dos alvos em torno do centro da região
+	targetSpawnRadius  = 18 // raio (hex) MÁX de espalhamento dos alvos a partir do centro da região
+	// WorldHalf é a meia-largura do mundo (coords −WorldHalf..WorldHalf). Espelha WORLD_HALF do
+	// frontend. Alvos não nascem fora dessas bordas.
+	WorldHalf = 50
 )
 
 // CombatTargetFor devolve a defesa agregada (ataque, HP) e o loot de um alvo de COMBATE
@@ -153,13 +156,18 @@ func placeOneNode(rng *rand.Rand, cx, cy int, taken map[[2]int]bool) (NodeSpawn,
 	return NodeSpawn{X: x, Y: y, Level: RandomTargetLevel(rng), Resource: RandomNodeResource(rng)}, true
 }
 
-// placeOneCoord acha um tile livre (não em `taken`) espalhado em torno de (cx,cy); marca-o.
+// placeOneCoord acha um tile livre (não em `taken`, dentro do mundo) ESPALHADO em torno de (cx,cy).
+// Distância CONTÍNUA e aleatória (sem padrão visível tipo "10/20/30") com `√rng` → distribuição
+// uniforme por ÁREA, ou seja, menos amontoado perto do centro e mais alvos espalhados/longe.
 func placeOneCoord(rng *rand.Rand, cx, cy int, taken map[[2]int]bool) (x, y int, ok bool) {
-	for attempt := 0; attempt < 200; attempt++ {
+	for attempt := 0; attempt < 300; attempt++ {
 		ang := rng.Float64() * 2 * math.Pi
-		dist := rng.Float64() * float64(nodeSpawnRadius)
+		dist := float64(targetSpawnRadius) * math.Sqrt(rng.Float64())
 		px := cx + int(dist*math.Cos(ang))
 		py := cy + int(dist*math.Sin(ang))
+		if px < -WorldHalf+1 || px > WorldHalf-1 || py < -WorldHalf+1 || py > WorldHalf-1 {
+			continue // fora das bordas do mundo → tenta outra posição
+		}
 		if taken[[2]int{px, py}] {
 			continue
 		}

@@ -42,6 +42,9 @@ UPDATE cities SET
     resources_updated_at = $8
 WHERE id = $1;
 
+-- name: AddCityScouts :exec
+UPDATE cities SET scouts = scouts + $2 WHERE id = $1;
+
 -- name: UpdateCityStorageCaps :exec
 UPDATE cities SET
     matter_cap = $2, energy_cap = $3, knowledge_cap = $4

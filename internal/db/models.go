@@ -65,6 +65,7 @@ type City struct {
 	KnowledgeCap       float64     `json:"knowledge_cap"`
 	ResourcesUpdatedAt time.Time   `json:"resources_updated_at"`
 	CreatedAt          time.Time   `json:"created_at"`
+	Scouts             int32       `json:"scouts"`
 }
 
 type CityBuilding struct {
@@ -171,6 +172,29 @@ type ScheduledEvent struct {
 	Type      string      `json:"type"`
 	FiresAt   time.Time   `json:"fires_at"`
 	Payload   []byte      `json:"payload"`
+	Status    string      `json:"status"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+type ScoutMission struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorldID        pgtype.UUID        `json:"world_id"`
+	AttackerCityID pgtype.UUID        `json:"attacker_city_id"`
+	TargetCityID   pgtype.UUID        `json:"target_city_id"`
+	Status         string             `json:"status"`
+	Intel          []byte             `json:"intel"`
+	DepartAt       time.Time          `json:"depart_at"`
+	ArriveAt       time.Time          `json:"arrive_at"`
+	ReturnAt       pgtype.Timestamptz `json:"return_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+}
+
+type ScoutQueue struct {
+	ID        pgtype.UUID `json:"id"`
+	CityID    pgtype.UUID `json:"city_id"`
+	Count     int32       `json:"count"`
+	StartedAt time.Time   `json:"started_at"`
+	FinishAt  time.Time   `json:"finish_at"`
 	Status    string      `json:"status"`
 	CreatedAt time.Time   `json:"created_at"`
 }

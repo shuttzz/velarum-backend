@@ -99,6 +99,15 @@ func main() {
 	sch.Handle(city.EventRaidReturn, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.ResolveRaidReturnEvent(ctx, e.Payload, time.Now().UTC())
 	})
+	sch.Handle(city.EventScoutComplete, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.CompleteScoutEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventScoutArrival, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveScoutArrivalEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventScoutReturn, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveScoutReturnEvent(ctx, e.Payload, time.Now().UTC())
+	})
 	go sch.Run(ctx)
 
 	mux := http.NewServeMux()
@@ -316,6 +325,40 @@ func main() {
 		writeJSON(w, http.StatusAccepted, m)
 	}))
 
+	// Espionagem (SW3): treinar batedores na Toca dos Batedores.
+	mux.HandleFunc("POST /cities/{id}/train-scouts", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Count int `json:"count"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		sq, err := citySvc.TrainScout(r.Context(), r.PathValue("id"), body.Count, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForScoutErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, sq)
+	}))
+
+	// Espionagem (SW3): enviar 1 batedor para espiar a cidade de outro jogador (lane separada).
+	mux.HandleFunc("POST /cities/{id}/scout", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TargetCityID string `json:"target_city_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		m, err := citySvc.SendScout(r.Context(), r.PathValue("id"), body.TargetCityID, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForScoutErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, m)
+	}))
+
 	// Saquear a cidade de outro jogador (SW3 PvP): envia tropas → combate no destino → volta com loot.
 	mux.HandleFunc("POST /cities/{id}/raid", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -482,6 +525,19 @@ func statusForMarchErr(err error) int {
 	}
 }
 
+func statusForScoutErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrTargetCityNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrNoScoutHouse), errors.Is(err, city.ErrNoScouts), errors.Is(err, city.ErrInsufficient):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func statusForRaidErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
@@ -633,6 +689,10 @@ func codeFor(err error) string {
 		return "cannot_raid_self"
 	case errors.Is(err, city.ErrDefenderShielded):
 		return "defender_shielded"
+	case errors.Is(err, city.ErrNoScoutHouse):
+		return "no_scout_house"
+	case errors.Is(err, city.ErrNoScouts):
+		return "no_scouts"
 	default:
 		return "internal"
 	}

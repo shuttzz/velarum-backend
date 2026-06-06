@@ -12,6 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addCityScouts = `-- name: AddCityScouts :exec
+UPDATE cities SET scouts = scouts + $2 WHERE id = $1
+`
+
+type AddCityScoutsParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Scouts int32       `json:"scouts"`
+}
+
+func (q *Queries) AddCityScouts(ctx context.Context, arg AddCityScoutsParams) error {
+	_, err := q.db.Exec(ctx, addCityScouts, arg.ID, arg.Scouts)
+	return err
+}
+
 const createCity = `-- name: CreateCity :one
 INSERT INTO cities (
     world_id, player_id, name, region, coord_x, coord_y, era,
@@ -26,7 +40,7 @@ INSERT INTO cities (
     $14, $15, $16,
     $17
 )
-RETURNING id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at
+RETURNING id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at, scouts
 `
 
 type CreateCityParams struct {
@@ -90,12 +104,13 @@ func (q *Queries) CreateCity(ctx context.Context, arg CreateCityParams) (City, e
 		&i.KnowledgeCap,
 		&i.ResourcesUpdatedAt,
 		&i.CreatedAt,
+		&i.Scouts,
 	)
 	return i, err
 }
 
 const getCity = `-- name: GetCity :one
-SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at, scouts FROM cities WHERE id = $1
 `
 
 func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
@@ -121,6 +136,7 @@ func (q *Queries) GetCity(ctx context.Context, id pgtype.UUID) (City, error) {
 		&i.KnowledgeCap,
 		&i.ResourcesUpdatedAt,
 		&i.CreatedAt,
+		&i.Scouts,
 	)
 	return i, err
 }
@@ -155,7 +171,7 @@ func (q *Queries) GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) 
 }
 
 const getCityByPlayer = `-- name: GetCityByPlayer :one
-SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE player_id = $1
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at, scouts FROM cities WHERE player_id = $1
 `
 
 func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error) {
@@ -181,12 +197,13 @@ func (q *Queries) GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (Ci
 		&i.KnowledgeCap,
 		&i.ResourcesUpdatedAt,
 		&i.CreatedAt,
+		&i.Scouts,
 	)
 	return i, err
 }
 
 const getCityForUpdate = `-- name: GetCityForUpdate :one
-SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at FROM cities WHERE id = $1 FOR UPDATE
+SELECT id, world_id, player_id, name, region, coord_x, coord_y, era, matter_stored, energy_stored, knowledge_stored, matter_rate, energy_rate, knowledge_rate, matter_cap, energy_cap, knowledge_cap, resources_updated_at, created_at, scouts FROM cities WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error) {
@@ -212,6 +229,7 @@ func (q *Queries) GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, e
 		&i.KnowledgeCap,
 		&i.ResourcesUpdatedAt,
 		&i.CreatedAt,
+		&i.Scouts,
 	)
 	return i, err
 }

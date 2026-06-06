@@ -53,6 +53,9 @@ type City struct {
 	WorldMarches []WorldMarch `json:"world_marches"` // marchas a nós do mundo compartilhado (SW2)
 	Raids        []Raid       `json:"raids"`         // saques que VOCÊ enviou (SW3)
 	Incoming     []IncomingRaid `json:"incoming"`    // ataques VINDO para você (alerta, com névoa)
+	Scouts        int            `json:"scouts"`         // batedores treinados, parados na cidade (SW3)
+	ScoutsTraining []ScoutQueued `json:"scouts_training"` // batedores em treino
+	ScoutMissions []ScoutMission `json:"scout_missions"` // missões de espionagem ativas
 	// ActiveBattleID é o id da batalha tática em andamento (vazio se nenhuma) — permite
 	// ao frontend retomar/abrir a tela de batalha ao carregar a cidade.
 	ActiveBattleID string    `json:"active_battle_id"`
@@ -358,6 +361,27 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 		}
 		c.Incoming = append(c.Incoming, IncomingRaid{AttackerName: name, ArriveAt: r.ArriveAt})
 	}
+	// Espionagem (SW3): batedores em treino + missões de scout ativas.
+	scoutsTraining, err := s.q.ListPendingScouts(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, sc := range scoutsTraining {
+		c.ScoutsTraining = append(c.ScoutsTraining, ScoutQueued{ID: db.UUIDString(sc.ID), Count: int(sc.Count), FinishAt: sc.FinishAt})
+	}
+	scoutMissions, err := s.q.ListActiveScoutMissions(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, m := range scoutMissions {
+		dm := scoutMissionToDomain(m)
+		if tc, err := s.q.GetCity(ctx, m.TargetCityID); err == nil {
+			if tp, err := s.q.GetPlayer(ctx, tc.PlayerID); err == nil {
+				dm.TargetName = tp.Username
+			}
+		}
+		c.ScoutMissions = append(c.ScoutMissions, dm)
+	}
 	if bat, err := s.q.GetActiveBattle(ctx, id); err == nil {
 		c.ActiveBattleID = db.UUIDString(bat.ID)
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -401,7 +425,8 @@ func toDomainCity(c db.City, now time.Time) City {
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
 		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},
 		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, WorldMarches: []WorldMarch{},
-		Raids: []Raid{}, Incoming: []IncomingRaid{}, ServerNow: now,
+		Raids: []Raid{}, Incoming: []IncomingRaid{},
+		Scouts: int(c.Scouts), ScoutsTraining: []ScoutQueued{}, ScoutMissions: []ScoutMission{}, ServerNow: now,
 	}
 }
 

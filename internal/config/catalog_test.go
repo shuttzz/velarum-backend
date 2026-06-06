@@ -27,7 +27,7 @@ func TestCatalogOnlyExposesImplemented(t *testing.T) {
 	for _, b := range c.Buildings {
 		present[b.Key] = true
 	}
-	for _, ph := range []string{"altar_das_fogueiras", "torre_do_vigia", "circulo_runico", "praca_do_conselho", "pira_dos_guerreiros", "marco_primeiros_fogos"} {
+	for _, ph := range []string{"altar_das_fogueiras", "circulo_runico", "praca_do_conselho", "pira_dos_guerreiros", "marco_primeiros_fogos"} {
 		if present[ph] {
 			t.Fatalf("placeholder não deveria estar no catálogo: %s", ph)
 		}

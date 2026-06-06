@@ -12,16 +12,17 @@ import (
 )
 
 const createPlayer = `-- name: CreatePlayer :one
-INSERT INTO players (world_id, account_id, username, faction)
-VALUES ($1, $2, $3, $4)
-RETURNING id, world_id, account_id, username, faction, era, last_seen_at, created_at
+INSERT INTO players (world_id, account_id, username, faction, shield_until)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, world_id, account_id, username, faction, era, last_seen_at, shield_until, created_at
 `
 
 type CreatePlayerParams struct {
-	WorldID   pgtype.UUID `json:"world_id"`
-	AccountID pgtype.UUID `json:"account_id"`
-	Username  string      `json:"username"`
-	Faction   string      `json:"faction"`
+	WorldID     pgtype.UUID        `json:"world_id"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	Username    string             `json:"username"`
+	Faction     string             `json:"faction"`
+	ShieldUntil pgtype.Timestamptz `json:"shield_until"`
 }
 
 func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Player, error) {
@@ -30,6 +31,7 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 		arg.AccountID,
 		arg.Username,
 		arg.Faction,
+		arg.ShieldUntil,
 	)
 	var i Player
 	err := row.Scan(
@@ -40,13 +42,24 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (Pla
 		&i.Faction,
 		&i.Era,
 		&i.LastSeenAt,
+		&i.ShieldUntil,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
+const dropPlayerShield = `-- name: DropPlayerShield :exec
+UPDATE players SET shield_until = NULL WHERE id = $1
+`
+
+// Derruba o escudo de novato (ao fazer o 1º ataque).
+func (q *Queries) DropPlayerShield(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, dropPlayerShield, id)
+	return err
+}
+
 const getPlayer = `-- name: GetPlayer :one
-SELECT id, world_id, account_id, username, faction, era, last_seen_at, created_at FROM players WHERE id = $1
+SELECT id, world_id, account_id, username, faction, era, last_seen_at, shield_until, created_at FROM players WHERE id = $1
 `
 
 func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error) {
@@ -60,13 +73,14 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 		&i.Faction,
 		&i.Era,
 		&i.LastSeenAt,
+		&i.ShieldUntil,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getPlayerByAccountAndWorld = `-- name: GetPlayerByAccountAndWorld :one
-SELECT id, world_id, account_id, username, faction, era, last_seen_at, created_at FROM players WHERE world_id = $1 AND account_id = $2
+SELECT id, world_id, account_id, username, faction, era, last_seen_at, shield_until, created_at FROM players WHERE world_id = $1 AND account_id = $2
 `
 
 type GetPlayerByAccountAndWorldParams struct {
@@ -85,6 +99,28 @@ func (q *Queries) GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerB
 		&i.Faction,
 		&i.Era,
 		&i.LastSeenAt,
+		&i.ShieldUntil,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlayerForUpdate = `-- name: GetPlayerForUpdate :one
+SELECT id, world_id, account_id, username, faction, era, last_seen_at, shield_until, created_at FROM players WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetPlayerForUpdate(ctx context.Context, id pgtype.UUID) (Player, error) {
+	row := q.db.QueryRow(ctx, getPlayerForUpdate, id)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.WorldID,
+		&i.AccountID,
+		&i.Username,
+		&i.Faction,
+		&i.Era,
+		&i.LastSeenAt,
+		&i.ShieldUntil,
 		&i.CreatedAt,
 	)
 	return i, err

@@ -46,6 +46,7 @@ CREATE TABLE players (
     faction      TEXT NOT NULL, -- aurenthos | brevali | sorenthai | kethari | valdruun
     era          SMALLINT NOT NULL DEFAULT 1,
     last_seen_at TIMESTAMPTZ,
+    shield_until TIMESTAMPTZ,                    -- escudo de novato (4d ao criar; cai ao 1º ataque)
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (world_id, account_id),
     UNIQUE (world_id, username)
@@ -256,12 +257,33 @@ CREATE TABLE world_marches (
 CREATE INDEX idx_world_marches_active ON world_marches (city_id) WHERE status <> 'done';
 CREATE INDEX idx_world_marches_target ON world_marches (target_id) WHERE status <> 'done';
 
+-- Saques PvP: exército que sai da SUA cidade rumo à cidade de OUTRO jogador. Marcha = TIMER
+-- (ida → combate de saque → volta com loot). Espelhado em scheduled_events (raid.arrival/return).
+CREATE TABLE raids (
+    id               UUID PRIMARY KEY DEFAULT uuidv7(),
+    world_id         UUID NOT NULL REFERENCES worlds(id),
+    attacker_city_id UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    defender_city_id UUID NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    troops           JSONB NOT NULL,                   -- {unit_type: count} enviado
+    survivors        JSONB,                            -- atacante pós-combate (volta à guarnição)
+    attacker_won     BOOLEAN,
+    loot             JSONB,                            -- recurso saqueado (resource.Amounts)
+    status           TEXT NOT NULL DEFAULT 'outbound', -- outbound | returning | done
+    depart_at        TIMESTAMPTZ NOT NULL,
+    arrive_at        TIMESTAMPTZ NOT NULL,             -- chegada à cidade alvo (combate)
+    return_at        TIMESTAMPTZ,                      -- chegada de volta
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_raids_attacker ON raids (attacker_city_id) WHERE status <> 'done';
+CREATE INDEX idx_raids_defender ON raids (defender_city_id) WHERE status <> 'done';
+
 -- Mundo padrão (compartilhado) com UUID FIXO conhecido — os jogadores entram nele ao se
 -- registrarem/logarem. Mais mundos/temporadas virão depois (matchmaking dedicado).
 INSERT INTO worlds (id, name, speed, status)
 VALUES ('00000000-0000-7000-8000-000000000001', 'Velarum', 1, 'active');
 
 -- +goose Down
+DROP TABLE IF EXISTS raids;
 DROP TABLE IF EXISTS world_marches;
 DROP TABLE IF EXISTS world_targets;
 DROP TABLE IF EXISTS scheduled_events;

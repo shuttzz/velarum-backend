@@ -93,6 +93,12 @@ func main() {
 	sch.Handle(city.EventWorldReturn, func(ctx context.Context, e scheduler.Event) error {
 		return citySvc.ResolveWorldReturnEvent(ctx, e.Payload, time.Now().UTC())
 	})
+	sch.Handle(city.EventRaidArrival, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveRaidArrivalEvent(ctx, e.Payload, time.Now().UTC())
+	})
+	sch.Handle(city.EventRaidReturn, func(ctx context.Context, e scheduler.Event) error {
+		return citySvc.ResolveRaidReturnEvent(ctx, e.Payload, time.Now().UTC())
+	})
 	go sch.Run(ctx)
 
 	mux := http.NewServeMux()
@@ -310,6 +316,24 @@ func main() {
 		writeJSON(w, http.StatusAccepted, m)
 	}))
 
+	// Saquear a cidade de outro jogador (SW3 PvP): envia tropas → combate no destino → volta com loot.
+	mux.HandleFunc("POST /cities/{id}/raid", ownedCity(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TargetCityID string         `json:"target_city_id"`
+			Troops       map[string]int `json:"troops"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		rd, err := citySvc.StartRaid(r.Context(), r.PathValue("id"), body.TargetCityID, body.Troops, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForRaidErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, rd)
+	}))
+
 	// Coletar num nó do mundo compartilhado (SW2): envia tropas → coleta por tempo → volta com loot.
 	mux.HandleFunc("POST /cities/{id}/collect", ownedCity(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -458,6 +482,19 @@ func statusForMarchErr(err error) int {
 	}
 }
 
+func statusForRaidErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrTargetCityNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrDefenderShielded), errors.Is(err, city.ErrNoTroops), errors.Is(err, city.ErrQueueFull):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func statusForCollectErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
@@ -590,6 +627,12 @@ func codeFor(err error) string {
 		return "target_not_found"
 	case errors.Is(err, city.ErrTargetDepleted):
 		return "target_depleted"
+	case errors.Is(err, city.ErrTargetCityNotFound):
+		return "target_city_not_found"
+	case errors.Is(err, city.ErrCannotRaidSelf):
+		return "cannot_raid_self"
+	case errors.Is(err, city.ErrDefenderShielded):
+		return "defender_shielded"
 	default:
 		return "internal"
 	}

@@ -28,6 +28,8 @@ type Querier interface {
 	DeleteAccountSessions(ctx context.Context, accountID pgtype.UUID) error
 	DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error
 	DeleteSession(ctx context.Context, tokenHash string) error
+	// Derruba o escudo de novato (ao fazer o 1º ataque).
+	DropPlayerShield(ctx context.Context, id pgtype.UUID) error
 	DuePendingEvents(ctx context.Context, firesAt time.Time) ([]ScheduledEvent, error)
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
@@ -43,7 +45,9 @@ type Querier interface {
 	GetMarchForUpdate(ctx context.Context, id pgtype.UUID) (March, error)
 	GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 	GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerByAccountAndWorldParams) (Player, error)
+	GetPlayerForUpdate(ctx context.Context, id pgtype.UUID) (Player, error)
 	GetProvinceForUpdate(ctx context.Context, id pgtype.UUID) (Province, error)
+	GetRaidForUpdate(ctx context.Context, id pgtype.UUID) (Raid, error)
 	GetRecruitForUpdate(ctx context.Context, id pgtype.UUID) (RecruitQueue, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	GetWorld(ctx context.Context, id pgtype.UUID) (World, error)
@@ -55,6 +59,7 @@ type Querier interface {
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
 	InsertMarch(ctx context.Context, arg InsertMarchParams) (March, error)
 	InsertProvince(ctx context.Context, arg InsertProvinceParams) (Province, error)
+	InsertRaid(ctx context.Context, arg InsertRaidParams) (Raid, error)
 	InsertRecruitQueue(ctx context.Context, arg InsertRecruitQueueParams) (RecruitQueue, error)
 	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
 	InsertScheduledEvent(ctx context.Context, arg InsertScheduledEventParams) (ScheduledEvent, error)
@@ -62,10 +67,14 @@ type Querier interface {
 	InsertWorldTarget(ctx context.Context, arg InsertWorldTargetParams) (WorldTarget, error)
 	ListActiveMarches(ctx context.Context, cityID pgtype.UUID) ([]March, error)
 	ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID) ([]WorldMarch, error)
+	// Saques que SAÍRAM desta cidade (ataques em andamento).
+	ListAttackerRaids(ctx context.Context, attackerCityID pgtype.UUID) ([]Raid, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
 	ListCityTroops(ctx context.Context, cityID pgtype.UUID) ([]CityTroop, error)
 	// Alvos de combate (village/creature) cujo TTL venceu E sem marcha a caminho (outbound trava o TTL).
 	ListExpiredCombatTargets(ctx context.Context, arg ListExpiredCombatTargetsParams) ([]pgtype.UUID, error)
+	// Saques VINDO para esta cidade (alerta de incoming — defesa ativa).
+	ListIncomingRaids(ctx context.Context, defenderCityID pgtype.UUID) ([]Raid, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
 	ListPlayerProvinces(ctx context.Context, playerID pgtype.UUID) ([]Province, error)
@@ -88,6 +97,8 @@ type Querier interface {
 	SetMarchDone(ctx context.Context, id pgtype.UUID) error
 	SetMarchResult(ctx context.Context, arg SetMarchResultParams) error
 	SetProvinceConquered(ctx context.Context, arg SetProvinceConqueredParams) error
+	SetRaidDone(ctx context.Context, id pgtype.UUID) error
+	SetRaidResult(ctx context.Context, arg SetRaidResultParams) error
 	SetWorldMarchCollecting(ctx context.Context, arg SetWorldMarchCollectingParams) error
 	// Raid (village/creature): após o combate no destino, volta com sobreviventes + loot + resultado.
 	SetWorldMarchCombatReturning(ctx context.Context, arg SetWorldMarchCombatReturningParams) error

@@ -99,14 +99,15 @@ type March struct {
 }
 
 type Player struct {
-	ID         pgtype.UUID        `json:"id"`
-	WorldID    pgtype.UUID        `json:"world_id"`
-	AccountID  pgtype.UUID        `json:"account_id"`
-	Username   string             `json:"username"`
-	Faction    string             `json:"faction"`
-	Era        int16              `json:"era"`
-	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
-	CreatedAt  time.Time          `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	WorldID     pgtype.UUID        `json:"world_id"`
+	AccountID   pgtype.UUID        `json:"account_id"`
+	Username    string             `json:"username"`
+	Faction     string             `json:"faction"`
+	Era         int16              `json:"era"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+	ShieldUntil pgtype.Timestamptz `json:"shield_until"`
+	CreatedAt   time.Time          `json:"created_at"`
 }
 
 type Province struct {
@@ -125,6 +126,22 @@ type Province struct {
 	Status          string             `json:"status"`
 	ConqueredAt     pgtype.Timestamptz `json:"conquered_at"`
 	CreatedAt       time.Time          `json:"created_at"`
+}
+
+type Raid struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorldID        pgtype.UUID        `json:"world_id"`
+	AttackerCityID pgtype.UUID        `json:"attacker_city_id"`
+	DefenderCityID pgtype.UUID        `json:"defender_city_id"`
+	Troops         []byte             `json:"troops"`
+	Survivors      []byte             `json:"survivors"`
+	AttackerWon    *bool              `json:"attacker_won"`
+	Loot           []byte             `json:"loot"`
+	Status         string             `json:"status"`
+	DepartAt       time.Time          `json:"depart_at"`
+	ArriveAt       time.Time          `json:"arrive_at"`
+	ReturnAt       pgtype.Timestamptz `json:"return_at"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type RecruitQueue struct {

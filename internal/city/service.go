@@ -51,6 +51,8 @@ type City struct {
 	ArmyCap      int          `json:"army_cap"`
 	Marches      []March      `json:"marches"`
 	WorldMarches []WorldMarch `json:"world_marches"` // marchas a nós do mundo compartilhado (SW2)
+	Raids        []Raid       `json:"raids"`         // saques que VOCÊ enviou (SW3)
+	Incoming     []IncomingRaid `json:"incoming"`    // ataques VINDO para você (alerta, com névoa)
 	// ActiveBattleID é o id da batalha tática em andamento (vazio se nenhuma) — permite
 	// ao frontend retomar/abrir a tela de batalha ao carregar a cidade.
 	ActiveBattleID string    `json:"active_battle_id"`
@@ -138,6 +140,7 @@ func (s *Service) EnterWorld(ctx context.Context, accountID, faction, cityName s
 	}
 	player, err := q.CreatePlayer(ctx, db.CreatePlayerParams{
 		WorldID: worldUUID, AccountID: accUUID, Username: acc.Username, Faction: faction,
+		ShieldUntil: pgTime(now.Add(config.NewbieShieldDuration)), // escudo de novato (4 dias)
 	})
 	if err != nil {
 		return City{}, fmt.Errorf("criar jogador: %w", err)
@@ -327,6 +330,34 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 	for _, m := range worldMarches {
 		c.WorldMarches = append(c.WorldMarches, worldMarchToDomain(m))
 	}
+	// Saques que esta cidade enviou (SW3).
+	raids, err := s.q.ListAttackerRaids(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, r := range raids {
+		dr := raidToDomain(r)
+		if dc, err := s.q.GetCity(ctx, r.DefenderCityID); err == nil {
+			if dp, err := s.q.GetPlayer(ctx, dc.PlayerID); err == nil {
+				dr.DefenderName = dp.Username
+			}
+		}
+		c.Raids = append(c.Raids, dr)
+	}
+	// Ataques VINDO para esta cidade (alerta de incoming, com névoa: quem + quando).
+	incoming, err := s.q.ListIncomingRaids(ctx, id)
+	if err != nil {
+		return City{}, err
+	}
+	for _, r := range incoming {
+		name := ""
+		if ac, err := s.q.GetCity(ctx, r.AttackerCityID); err == nil {
+			if ap, err := s.q.GetPlayer(ctx, ac.PlayerID); err == nil {
+				name = ap.Username
+			}
+		}
+		c.Incoming = append(c.Incoming, IncomingRaid{AttackerName: name, ArriveAt: r.ArriveAt})
+	}
 	if bat, err := s.q.GetActiveBattle(ctx, id); err == nil {
 		c.ActiveBattleID = db.UUIDString(bat.ID)
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -369,7 +400,8 @@ func toDomainCity(c db.City, now time.Time) City {
 		Era: int(c.Era), CoordX: int(c.CoordX), CoordY: int(c.CoordY),
 		Resources: st.At(now), Rate: st.RatePerHour, Capacity: st.Capacity,
 		GridW: gw, GridH: gh, Buildings: []Building{}, Pending: []PendingBuild{},
-		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, WorldMarches: []WorldMarch{}, ServerNow: now,
+		Troops: []Troop{}, Recruits: []RecruitQueued{}, Marches: []March{}, WorldMarches: []WorldMarch{},
+		Raids: []Raid{}, Incoming: []IncomingRaid{}, ServerNow: now,
 	}
 }
 

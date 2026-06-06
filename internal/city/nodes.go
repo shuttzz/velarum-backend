@@ -615,7 +615,11 @@ func activeExpeditions(ctx context.Context, q *db.Queries, cityID pgtype.UUID) (
 	if err != nil {
 		return 0, err
 	}
-	return len(pm) + len(wm), nil
+	rd, err := q.ListAttackerRaids(ctx, cityID)
+	if err != nil {
+		return 0, err
+	}
+	return len(pm) + len(wm) + len(rd), nil
 }
 
 func scheduleWorldEvent(ctx context.Context, q *db.Queries, kind, marchID string, at time.Time) error {

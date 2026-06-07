@@ -18,7 +18,8 @@ func TestAllianceFlow_Integration(t *testing.T) {
 	accAUUID, _ := db.ParseUUID(accA)
 
 	// Criar aliança (A vira dono; debita 300 de premium dos 1000 iniciais).
-	mine, err := svc.CreateAlliance(ctx, accA, "Test Alliance", "TST", now)
+	anName, anTag := uniqAlliance(t)
+	mine, err := svc.CreateAlliance(ctx, accA, anName, anTag, now)
 	if err != nil {
 		t.Fatalf("CreateAlliance: %v", err)
 	}
@@ -90,7 +91,8 @@ func TestAllianceOpenJoin_Integration(t *testing.T) {
 	accA, _ := svc.OwnerAccountID(ctx, a.ID)
 	accB, _ := svc.OwnerAccountID(ctx, b.ID)
 
-	mine, err := svc.CreateAlliance(ctx, accA, "Open Clan", "OPN", now)
+	opName, opTag := uniqAlliance(t)
+	mine, err := svc.CreateAlliance(ctx, accA, opName, opTag, now)
 	if err != nil {
 		t.Fatalf("CreateAlliance: %v", err)
 	}

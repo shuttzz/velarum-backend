@@ -16,7 +16,6 @@ import (
 var (
 	ErrUnitUnknown     = errors.New("unidade desconhecida")
 	ErrNoBarracks      = errors.New("requer o Canteiro de Almas para recrutar")
-	ErrArmyCapExceeded = errors.New("teto de exército excedido")
 	ErrBadCount        = errors.New("quantidade inválida")
 	ErrUnitLocked      = errors.New("unidade ainda bloqueada (suba o Canteiro de Almas)")
 	ErrRecruitBusy     = errors.New("já há um recrutamento deste tipo em andamento")
@@ -69,38 +68,24 @@ func (s *Service) EnqueueRecruit(ctx context.Context, cityID, unitType string, c
 	}
 
 	bLevel := barracksLevel(buildings)
-	capacity := config.ArmyCap(bLevel)
-	if capacity == 0 {
+	if bLevel == 0 {
 		return RecruitQueued{}, ErrNoBarracks
 	}
 	if bLevel < def.MinBarracksLevel {
 		return RecruitQueued{}, ErrUnitLocked
 	}
 
-	// Uso atual = guarnição + recrutamentos pendentes (de qualquer tipo).
-	troops, err := q.ListCityTroops(ctx, id)
-	if err != nil {
-		return RecruitQueued{}, err
-	}
+	// SEM teto de POSSE (decisão 2026-06-07): o exército cresce livre — o recrutamento é limitado
+	// só por recurso + tempo. O limite militar é a CAPACIDADE DE MARCHA, aplicada na saída de tropas.
+	// Recrutamento: 1 lane por TIPO de unidade. Já treinando este tipo → recusa.
 	pending, err := q.ListPendingRecruits(ctx, id)
 	if err != nil {
 		return RecruitQueued{}, err
 	}
-	// Recrutamento: 1 lane por TIPO de unidade. Já treinando este tipo → recusa.
 	for _, p := range pending {
 		if p.UnitType == unitType {
 			return RecruitQueued{}, ErrRecruitBusy
 		}
-	}
-	used := 0
-	for _, t := range troops {
-		used += int(t.Count)
-	}
-	for _, p := range pending {
-		used += int(p.Count)
-	}
-	if used+count > capacity {
-		return RecruitQueued{}, fmt.Errorf("%w: %d/%d", ErrArmyCapExceeded, used, capacity)
 	}
 
 	cost := resource.Amounts{

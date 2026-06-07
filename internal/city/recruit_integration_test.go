@@ -31,7 +31,7 @@ func TestRecruitFlow_Integration(t *testing.T) {
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	c := enterTestGame(t, svc, pool, "brevali", now)
 
-	// Coloca um Canteiro de Almas nível 1 direto (habilita recrutamento; teto = 20+5 = 25).
+	// Coloca um Canteiro de Almas nível 1 direto (habilita recrutamento — sem teto de posse).
 	cityUUID, _ := db.ParseUUID(c.ID)
 	if _, err := db.New(pool).InsertCityBuilding(ctx, db.InsertCityBuildingParams{
 		CityID: cityUUID, BuildingType: config.BarracksKey, Level: 1, PosX: 0, PosY: 0,
@@ -56,8 +56,8 @@ func TestRecruitFlow_Integration(t *testing.T) {
 	if len(loaded.Recruits) != 1 || len(loaded.Troops) != 0 {
 		t.Fatalf("estado pendente inesperado: recruits=%d troops=%d", len(loaded.Recruits), len(loaded.Troops))
 	}
-	if loaded.ArmyCap != config.ArmyCap(1) {
-		t.Fatalf("army_cap = %d, quero %d", loaded.ArmyCap, config.ArmyCap(1))
+	if loaded.MarchCapacity != config.MarchCapForEra(1) {
+		t.Fatalf("march_capacity = %d, quero %d", loaded.MarchCapacity, config.MarchCapForEra(1))
 	}
 
 	// Conclui o recrutamento → 5 lanceiros na guarnição.
@@ -81,9 +81,15 @@ func TestRecruitFlow_Integration(t *testing.T) {
 		t.Fatalf("idempotência falhou: count = %d, quero 5", loaded.Troops[0].Count)
 	}
 
-	// Teto de exército: já temos 5; pedir 25 estoura (5+25 > 25).
-	if _, err := svc.EnqueueRecruit(ctx, c.ID, "lanceiro", 25, rq.FinishAt); !errors.Is(err, ErrArmyCapExceeded) {
-		t.Fatalf("esperava ErrArmyCapExceeded, veio %v", err)
+	// SEM teto de posse: com recursos suficientes, recrutar muito além do antigo teto (25) deve PASSAR.
+	if err := db.New(pool).UpdateCityResources(ctx, db.UpdateCityResourcesParams{
+		ID: cityUUID, MatterStored: 100000, EnergyStored: 100000, KnowledgeStored: 100000,
+		MatterRate: 0, EnergyRate: 0, KnowledgeRate: 0, ResourcesUpdatedAt: rq.FinishAt,
+	}); err != nil {
+		t.Fatalf("UpdateCityResources: %v", err)
+	}
+	if _, err := svc.EnqueueRecruit(ctx, c.ID, "lanceiro", 50, rq.FinishAt); err != nil {
+		t.Fatalf("recrutar 50 (> antigo teto 25) deveria passar sem teto de posse, veio: %v", err)
 	}
 }
 

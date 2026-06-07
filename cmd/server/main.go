@@ -640,7 +640,7 @@ func statusForMarchErr(err error) int {
 	case errors.Is(err, city.ErrProvinceNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrProvinceConquered), errors.Is(err, city.ErrNoTroops),
-		errors.Is(err, city.ErrQueueFull):
+		errors.Is(err, city.ErrQueueFull), errors.Is(err, city.ErrMarchCapacityExceeded):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -682,7 +682,8 @@ func statusForRaidErr(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, city.ErrTargetCityNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, city.ErrDefenderShielded), errors.Is(err, city.ErrNoTroops), errors.Is(err, city.ErrQueueFull):
+	case errors.Is(err, city.ErrDefenderShielded), errors.Is(err, city.ErrNoTroops),
+		errors.Is(err, city.ErrQueueFull), errors.Is(err, city.ErrMarchCapacityExceeded):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -696,7 +697,7 @@ func statusForCollectErr(err error) int {
 	case errors.Is(err, city.ErrTargetNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, city.ErrTargetDepleted), errors.Is(err, city.ErrNoTroops),
-		errors.Is(err, city.ErrQueueFull):
+		errors.Is(err, city.ErrQueueFull), errors.Is(err, city.ErrMarchCapacityExceeded):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -721,7 +722,7 @@ func statusForRecruitErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount):
 		return http.StatusBadRequest
-	case errors.Is(err, city.ErrNoBarracks), errors.Is(err, city.ErrArmyCapExceeded),
+	case errors.Is(err, city.ErrNoBarracks),
 		errors.Is(err, city.ErrUnitLocked), errors.Is(err, city.ErrInsufficient),
 		errors.Is(err, city.ErrRecruitBusy):
 		return http.StatusConflict
@@ -799,8 +800,6 @@ func codeFor(err error) string {
 		return "bad_count"
 	case errors.Is(err, city.ErrNoBarracks):
 		return "no_barracks"
-	case errors.Is(err, city.ErrArmyCapExceeded):
-		return "army_cap_exceeded"
 	case errors.Is(err, city.ErrUnitLocked):
 		return "unit_locked"
 	case errors.Is(err, city.ErrRecruitBusy):
@@ -811,6 +810,8 @@ func codeFor(err error) string {
 		return "province_conquered"
 	case errors.Is(err, city.ErrNoTroops):
 		return "no_troops"
+	case errors.Is(err, city.ErrMarchCapacityExceeded):
+		return "march_capacity_exceeded"
 	case errors.Is(err, city.ErrBattleActive):
 		return "battle_active"
 	case errors.Is(err, city.ErrBattleNotFound):

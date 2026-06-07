@@ -150,6 +150,8 @@ Avançar abre: novos edifícios, unidades, recursos de era, ramo da árvore, e o
 - **Territórios de Aliança** — disputa PvP coletiva (§10); colorem/controlam regiões do mapa.
 - **Nós dos Tecelões** — 1 por era, pontos fixos disputados.
 
+**Névoa / exploração (planejado, decisão 2026-06-07):** o mapa-mundo começa coberto por **névoa (fog of war)** por jogador; **batedores** (ver §9/espionagem) **exploram e revelam** a névoa, além de espionar. Detalhes do rework de batedores (imortais, sem treino, gate por era/nível, teto 5) em memória `design-batedores-nevoa` — é um épico próprio, árvore a definir.
+
 **Escala:** **sharding por world/servidor** — cada world tem N jogadores (milhares); abre-se um novo world quando lota. Dentro de um world, mapa 100% compartilhado. Viável para dev solo em Go+Postgres+Redis pois NÃO há tempo real (o caro do mundo compartilhado é o realtime/broadcast, que o design assíncrono elimina). Grid com índice espacial `(x,y)`; marchas resolvidas por job no `arrive_at`.
 
 > **Nota de revisão (2026-06-04):** a versão anterior instanciava o PvE por jogador ("bolsões de Lacuna") por crer que mundo compartilhado era inviável p/ dev solo. Pesquisa de mercado mostrou que isso só vale para mundo compartilhado **em tempo real**; o **assíncrono** (Travian/OGame rodaram décadas em PHP+MySQL) é barato e é o padrão do gênero — e dá a "sensação de mundo vivo" que o instanciado não dá. Detalhes de como as faixas de dificuldade/era mapeiam no mapa compartilhado: a refinar na implementação.
@@ -158,15 +160,21 @@ Avançar abre: novos edifícios, unidades, recursos de era, ramo da árvore, e o
 
 ## 9. Combate
 
-Sistema **híbrido e personalizado** (não cópia), em 3 camadas:
+**Decisão (2026-06-07): o combate é resolvido por AUTO-RESOLVE + RELATÓRIO** — coração único do sistema, tanto PvE (marcha) quanto PvP (saque). É o que o mundo compartilhado assíncrono exige (o defensor está offline quando atacado → PvP *tem* que auto-resolver) e o que escala para dezenas de conflitos simultâneos (alianças/território). Camadas:
 
 1. **Mapa Vivo (desde o MVP):** exércitos marcham visivelmente pelo mapa como **timers** (não tempo real). Posição importa; vê-se a ameaça chegando; dá para interceptar/reforçar/recuar de forma assíncrona. (Rouba a "alma" do Rise of Kingdoms sem o custo de netcode em tempo real.)
 
-2. **Batalha Tática (presente mas opcional):** instanciada, turno a turno, em grade hexagonal, contra IA (o defensor pré-define a formação offline). Identidade própria: as **Lacunas como tiles de terreno** distintivos (desvio de projétil, salto, dano geométrico) + assimetria de facção aparecendo na batalha. *Thin client* (servidor é autoridade; cliente só renderiza), estado em Redis, **determinística** (seed persistida → auditável/anti-cheat).
+2. **Resolução automática + relatório (PRIMÁRIA):** determinística (seed persistida → auditável/anti-cheat). A **profundidade** mora nas decisões ANTES da batalha: composição e **counters** (lanceiro × arqueiro × cavalaria futura), **defesa** (guarnição + Torre + Muralha), **espionagem** (batedores), capacidade de marcha e **timing**. Terreno/bônus entram como **modificadores no cálculo** — não jogados na mão.
 
-3. **Escolha de profundidade:** **auto-resolução** (raids/casual, instantâneo) vs **tática manual** (~20-30% mais eficiente — recompensa engajamento sem punir quem usa auto).
+3. **Batalha Tática hex (CONSTRUÍDA, PARQUEADA):** motor turno-a-turno em grade hexagonal com Lacunas/terreno já implementado e testado, mas **fora do loop ativo** (entrada escondida na UI). Reservada para **conteúdo PvE especial futuro** (chefes, masmorras, criaturas nomeadas — o jogador *escolhe* comandar na mão por recompensa melhor, à la Heroes of Might & Magic dentro do 4X). **Nunca** no PvP nem no saque do dia a dia. Código mantido dormente no repo.
 
-**Tropas:** recrutadas com custo + tempo, com **teto de exército por era** (limite de Suprimentos). Tipos por categoria evoluem por era (infantaria, projétil, cavalaria/veículo, suporte, artilharia/especial de facção). Tropas de era anterior continuam usáveis, mas menos eficientes.
+**Limite militar — capacidade de marcha (decisão 2026-06-07):**
+- **Sem teto de POSSE:** o exército total cresce livre (freio = economia + tempo de treino e, no futuro, **upkeep**). A **defesa usa TODA a guarnição em casa**.
+- A **ofensa** é limitada pela **capacidade de marcha** (máx. de tropas por expedição), somada ao nº de **marchas simultâneas** (slots de expedição, crescem por era). Assimetria deliberada: defende-se com tudo, ataca-se com o que a marcha comporta.
+- A capacidade **sobe por (a) avanço de ERA (bump automático) e (b) PESQUISA** (numa Academia / edifício de pesquisa a definir). A pesquisa aplica-se a **TODAS as marchas de uma vez** (uniforme), inclusive as obtidas depois — **sem** upgrade/custo por marcha individual. **Sem herói/XP** (decisão explícita do dono: a marcha não vira personagem).
+- Anti-P2W: capacidade **nunca** sobe por dinheiro. Itens que afetam capacidade/marcha são **PvE-only** (ver §13).
+
+**Tropas:** recrutadas com custo + tempo. Tipos por categoria evoluem por era (infantaria, projétil, cavalaria/veículo, suporte, artilharia/especial de facção). Tropas de era anterior continuam usáveis, mas menos eficientes.
 
 **Modelo rejeitado:** combate de manobra em tempo real (estilo RoK) — descartado por inviabilidade técnica (exigiria WebSocket + tick loop + netcode; custo de infra 8-20×; proibitivo para dev solo).
 
@@ -215,13 +223,14 @@ Sistema **híbrido e personalizado** (não cópia), em 3 camadas:
 
 **✅ Vender:**
 - **Aceleração de progresso civil/econômico** (instant-finish / redução de tempo de construção e pesquisa) — com **CUSTO ESCALANTE** (itens curtos baratos, longos caros; o preço é o freio principal; teto diário fica de reserva).
-- **Aceleração de TREINAMENTO de tropas** — com **4 travas**: só acelera produção (nunca deixa tropa mais forte); **teto de exército por era**; custo escalante; **nunca** reforço instantâneo em combate ativo.
+- **Aceleração de TREINAMENTO de tropas** — com **4 travas**: só acelera produção (nunca deixa tropa mais forte); **capacidade de marcha por era/pesquisa** (pagar treina/repõe mais rápido, **não** coloca mais tropa em campo de uma vez); custo escalante; **nunca** reforço instantâneo em combate ativo.
+- **Consumíveis temporários CIVIS** (fila extra de obra/pesquisa/espião por X horas) — vendáveis. **Itens que afetam capacidade ou nº de marchas de TROPAS são PvE-only** (bloqueados em PvP/saque/guerra de aliança) — nunca poder militar comprável em PvP.
 - **Conveniência/QoL** via assinatura **"Velarum Plus"** (filas extras, painel, auto-coleta, notificações).
 - **Cosmético** (skins de cidade/unidade por era e facção, banners de aliança, títulos) — pilar de receita, catálogo gigante (7 eras × 5 facções).
 
 **❌ Nunca vender:** recursos brutos; poder militar/tropas diretas; tropa/reforço instantâneo em batalha ativa; **espaço/slots de cidade**; nada que trave a progressão atrás de pagamento.
 
-**Por que vender aceleração é seguro aqui (travas estruturais):** teto por era (pagar = chegar ao teto mais rápido, não mais alto); combate tático (não numérico puro); sem conquista de cidade; **endgame cooperativo** (ninguém compra a vitória sozinho); Crônicas também ganháveis de graça.
+**Por que vender aceleração é seguro aqui (travas estruturais):** capacidade de marcha por era/pesquisa (pagar = treinar/repor mais rápido, **não** despejar mais tropa de uma vez); combate por **composição/counters** (não numérico puro); sem conquista de cidade; **endgame cooperativo** (ninguém compra a vitória sozinho); Crônicas também ganháveis de graça.
 
 ---
 

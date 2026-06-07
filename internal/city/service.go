@@ -48,7 +48,7 @@ type City struct {
 	Pending   []PendingBuild   `json:"pending"`
 	Troops    []Troop          `json:"troops"`
 	Recruits  []RecruitQueued  `json:"recruits"`
-	ArmyCap      int          `json:"army_cap"`
+	MarchCapacity int         `json:"march_capacity"` // máx. de tropas por expedição (era; pesquisa no futuro)
 	Marches      []March      `json:"marches"`
 	WorldMarches []WorldMarch `json:"world_marches"` // marchas a nós do mundo compartilhado (SW2)
 	Raids        []Raid       `json:"raids"`         // saques que VOCÊ enviou (SW3)
@@ -299,8 +299,8 @@ func (s *Service) LoadCity(ctx context.Context, cityID string, now time.Time) (C
 		})
 	}
 
-	// Exército: guarnição + recrutamentos pendentes + teto (nível do Canteiro de Almas).
-	c.ArmyCap = config.ArmyCap(barracksLevel(buildings))
+	// Exército: SEM teto de posse (cresce livre). O limite militar é a capacidade de marcha por era.
+	c.MarchCapacity = config.MarchCapForEra(c.Era)
 	troops, err := s.q.ListCityTroops(ctx, id)
 	if err != nil {
 		return City{}, err

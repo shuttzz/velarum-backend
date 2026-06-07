@@ -28,7 +28,18 @@ var (
 	ErrProvinceNotFound  = errors.New("província não encontrada")
 	ErrProvinceConquered = errors.New("província já conquistada")
 	ErrNoTroops          = errors.New("tropas insuficientes na guarnição")
+	// ErrMarchCapacityExceeded: a expedição leva mais tropas que a capacidade de marcha da era.
+	ErrMarchCapacityExceeded = errors.New("capacidade de marcha excedida")
 )
+
+// totalTroops soma o nº de unidades de um destacamento (tropas enviadas numa expedição).
+func totalTroops(troops map[string]int) int {
+	n := 0
+	for _, c := range troops {
+		n += c
+	}
+	return n
+}
 
 // Eventos agendados do mapa vivo.
 const (
@@ -185,6 +196,11 @@ func (s *Service) StartMarch(ctx context.Context, cityID, provinceID string, tro
 	}
 	if n >= config.QueuesForEra(int(cityRow.Era)) {
 		return March{}, ErrQueueFull
+	}
+	// Capacidade de marcha: máx. de tropas por expedição (cresce por era). Defesa usa tudo em casa;
+	// só a ofensa é limitada. Ver [[design-combate-marcha]].
+	if totalTroops(troops) > config.MarchCapForEra(int(cityRow.Era)) {
+		return March{}, ErrMarchCapacityExceeded
 	}
 
 	garrison := map[string]int{}

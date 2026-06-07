@@ -51,10 +51,30 @@ func QueuesForEra(era int) int {
 }
 
 // Teto de exército (cresce com o nível do Canteiro de Almas).
+// OBSOLETO (decisão 2026-06-07): NÃO há mais teto de POSSE de tropas — o exército cresce livre
+// (freio = economia + tempo de treino). Mantido só por compat com testes/refs; o limite militar
+// passou a ser a CAPACIDADE DE MARCHA (ver MarchCapForEra), aplicada na SAÍDA de tropas.
 const (
 	ArmyCapBase          = 20
 	ArmyCapPerBarracksLv = 5
 )
+
+// MarchCapByEra: capacidade de marcha (máx. de tropas por EXPEDIÇÃO) por era (índice 0 = Era 1).
+// Decisão 2026-06-07: sem teto de posse — defende-se com TODA a guarnição em casa; a OFENSA é
+// limitada por esta capacidade. Na Fase 1 cresce só por ERA (bump automático ao avançar de era).
+// A PESQUISA (futuro) somará a este valor, UNIFORME p/ todas as marchas (sem nível/custo por marcha).
+var MarchCapByEra = []int{20, 30, 45, 65, 90, 120, 160}
+
+// MarchCapForEra retorna a capacidade de marcha base da era (clamp nos limites da tabela).
+func MarchCapForEra(era int) int {
+	if era < 1 {
+		era = 1
+	}
+	if era > len(MarchCapByEra) {
+		era = len(MarchCapByEra)
+	}
+	return MarchCapByEra[era-1]
+}
 
 // ProductionPerHour calcula a produção/hora de um edifício de recurso por nível.
 func ProductionPerHour(base float64, level int) float64 {

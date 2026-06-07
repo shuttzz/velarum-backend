@@ -143,6 +143,10 @@ func (s *Service) StartRaid(ctx context.Context, attackerCityID, defenderCityID 
 	if n >= config.QueuesForEra(int(attacker.Era)) {
 		return Raid{}, ErrQueueFull
 	}
+	// Capacidade de marcha: máx. de tropas por expedição (cresce por era). Ver [[design-combate-marcha]].
+	if totalTroops(troops) > config.MarchCapForEra(int(attacker.Era)) {
+		return Raid{}, ErrMarchCapacityExceeded
+	}
 
 	garrison := map[string]int{}
 	rows, err := q.ListCityTroops(ctx, aid)

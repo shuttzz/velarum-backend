@@ -202,7 +202,9 @@ func (s *Service) SendScout(ctx context.Context, attackerCityID, targetCityID st
 	if err := q.AddCityScouts(ctx, db.AddCityScoutsParams{ID: aid, Scouts: -1}); err != nil { // batedor sai
 		return ScoutMission{}, err
 	}
-	dur := time.Duration(config.MarchSecondsBetween(int(attacker.CoordX), int(attacker.CoordY), int(target.CoordX), int(target.CoordY))) * time.Second
+	// Velocidade de marcha do batedor melhora com o nível da Toca dos Batedores.
+	scoutLvl := buildingLevel(buildings, config.ScoutHouseKey)
+	dur := time.Duration(config.ScoutMarchSeconds(scoutLvl, int(attacker.CoordX), int(attacker.CoordY), int(target.CoordX), int(target.CoordY))) * time.Second
 	arriveAt := now.Add(dur)
 	m, err := q.InsertScoutMission(ctx, db.InsertScoutMissionParams{
 		WorldID: attacker.WorldID, AttackerCityID: aid, TargetCityID: tid, DepartAt: now, ArriveAt: arriveAt,
@@ -288,7 +290,13 @@ func (s *Service) ResolveScoutArrivalEvent(ctx context.Context, payload []byte, 
 	intel.Raidable = stateFromRow(target).Raidable(now)
 
 	intelJSON, _ := json.Marshal(intel)
-	returnAt := now.Add(time.Duration(config.MarchSecondsBetween(int(attacker.CoordX), int(attacker.CoordY), int(target.CoordX), int(target.CoordY))) * time.Second)
+	// Volta também acelerada pelo nível da Toca do atacante.
+	abuildings, err := q.ListCityBuildings(ctx, attacker.ID)
+	if err != nil {
+		return err
+	}
+	scoutLvl := buildingLevel(abuildings, config.ScoutHouseKey)
+	returnAt := now.Add(time.Duration(config.ScoutMarchSeconds(scoutLvl, int(attacker.CoordX), int(attacker.CoordY), int(target.CoordX), int(target.CoordY))) * time.Second)
 	if err := q.SetScoutMissionReturning(ctx, db.SetScoutMissionReturningParams{ID: mid, Intel: intelJSON, ReturnAt: pgTime(returnAt)}); err != nil {
 		return err
 	}

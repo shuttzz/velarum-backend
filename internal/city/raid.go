@@ -32,6 +32,7 @@ const (
 var (
 	ErrTargetCityNotFound = errors.New("cidade alvo não encontrada")
 	ErrCannotRaidSelf     = errors.New("não dá para saquear a própria cidade")
+	ErrCannotRaidAlly     = errors.New("não dá para saquear um aliado")
 	ErrDefenderShielded   = errors.New("alvo sob escudo de proteção")
 )
 
@@ -126,6 +127,12 @@ func (s *Service) StartRaid(ctx context.Context, attackerCityID, defenderCityID 
 	if err != nil {
 		return Raid{}, ErrTargetCityNotFound
 	}
+	// Aliados não se saqueiam (fatia B das alianças) — checado antes do escudo (mensagem mais clara).
+	if ally, err := sameAlliance(ctx, q, attacker.PlayerID, defender.PlayerID); err != nil {
+		return Raid{}, err
+	} else if ally {
+		return Raid{}, ErrCannotRaidAlly
+	}
 	// Escudo de novato do defensor → não pode ser saqueado.
 	defPlayer, err := q.GetPlayer(ctx, defender.PlayerID)
 	if err != nil {
@@ -192,6 +199,11 @@ func (s *Service) StartRaid(ctx context.Context, attackerCityID, defenderCityID 
 	}
 	irJSON, _ := json.Marshal(incomingReport{AttackerName: atkPlayer.Username, ArriveAt: arriveAt})
 	if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: defender.WorldID, PlayerID: defender.PlayerID, Type: reportTypeIncoming, Payload: irJSON}); err != nil {
+		return Raid{}, err
+	}
+	// Avisa a aliança do defensor: um aliado está sob ataque (fatia B).
+	aaJSON, _ := json.Marshal(allyAlert{AllyName: defender.Name, CoordX: int(defender.CoordX), CoordY: int(defender.CoordY), Kind: "raid"})
+	if err := notifyAlliance(ctx, q, defender.WorldID, defender.PlayerID, reportTypeAllyAlert, aaJSON); err != nil {
 		return Raid{}, err
 	}
 

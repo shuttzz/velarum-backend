@@ -11,6 +11,17 @@ import (
 
 const reportTypeBattle = "battle"
 
+// reportTypeAllyAlert: aviso à aliança de que um MEMBRO foi atacado/espionado (fatia B).
+const reportTypeAllyAlert = "ally_alert"
+
+// allyAlert é o payload do aviso à aliança: quem (cidade do aliado), onde e que tipo de ameaça.
+type allyAlert struct {
+	AllyName string `json:"ally_name"`
+	CoordX   int    `json:"coord_x"`
+	CoordY   int    `json:"coord_y"`
+	Kind     string `json:"kind"` // "raid" | "scout"
+}
+
 // Report é a visão de domínio de um relatório (caixa de entrada do jogador). O payload é
 // JSON cru tipado por `Type` (o frontend interpreta conforme o tipo).
 type Report struct {

@@ -365,6 +365,20 @@ func (q *Queries) UpdateAllianceEntryMode(ctx context.Context, arg UpdateAllianc
 	return err
 }
 
+const updateAllianceOwner = `-- name: UpdateAllianceOwner :exec
+UPDATE alliances SET owner_player_id = $2 WHERE id = $1
+`
+
+type UpdateAllianceOwnerParams struct {
+	ID            pgtype.UUID `json:"id"`
+	OwnerPlayerID pgtype.UUID `json:"owner_player_id"`
+}
+
+func (q *Queries) UpdateAllianceOwner(ctx context.Context, arg UpdateAllianceOwnerParams) error {
+	_, err := q.db.Exec(ctx, updateAllianceOwner, arg.ID, arg.OwnerPlayerID)
+	return err
+}
+
 const updateMemberRole = `-- name: UpdateMemberRole :exec
 UPDATE alliance_members SET role = $3 WHERE alliance_id = $1 AND player_id = $2
 `

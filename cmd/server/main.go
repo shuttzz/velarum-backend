@@ -253,6 +253,21 @@ func main() {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("POST /alliances/transfer", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			PlayerID string `json:"player_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		if err := citySvc.TransferOwnership(r.Context(), acc, body.PlayerID); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	mux.HandleFunc("POST /alliances/disband", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
 		acc, _ := auth.AccountID(r.Context())
 		if err := citySvc.Disband(r.Context(), acc); err != nil {
@@ -665,7 +680,7 @@ func statusForAllianceErr(err error) int {
 
 func statusForScoutErr(err error) int {
 	switch {
-	case errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
+	case errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf), errors.Is(err, city.ErrCannotScoutAlly):
 		return http.StatusBadRequest
 	case errors.Is(err, city.ErrTargetCityNotFound):
 		return http.StatusNotFound
@@ -678,7 +693,8 @@ func statusForScoutErr(err error) int {
 
 func statusForRaidErr(err error) int {
 	switch {
-	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
+	case errors.Is(err, city.ErrUnitUnknown), errors.Is(err, city.ErrBadCount),
+		errors.Is(err, city.ErrCannotRaidSelf), errors.Is(err, city.ErrCannotRaidAlly):
 		return http.StatusBadRequest
 	case errors.Is(err, city.ErrTargetCityNotFound):
 		return http.StatusNotFound
@@ -826,6 +842,10 @@ func codeFor(err error) string {
 		return "target_city_not_found"
 	case errors.Is(err, city.ErrCannotRaidSelf):
 		return "cannot_raid_self"
+	case errors.Is(err, city.ErrCannotRaidAlly):
+		return "cannot_raid_ally"
+	case errors.Is(err, city.ErrCannotScoutAlly):
+		return "cannot_scout_ally"
 	case errors.Is(err, city.ErrDefenderShielded):
 		return "defender_shielded"
 	case errors.Is(err, city.ErrNoScoutHouse):

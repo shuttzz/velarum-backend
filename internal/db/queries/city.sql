@@ -27,8 +27,12 @@ SELECT * FROM cities WHERE player_id = $1;
 SELECT coord_x, coord_y FROM cities WHERE world_id = $1;
 
 -- name: ListWorldCities :many
-SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username
-FROM cities c JOIN players p ON p.id = c.player_id
+SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username,
+       a.id AS alliance_id, a.tag AS alliance_tag
+FROM cities c
+JOIN players p ON p.id = c.player_id
+LEFT JOIN alliance_members am ON am.player_id = p.id
+LEFT JOIN alliances a ON a.id = am.alliance_id
 WHERE c.world_id = $1
 ORDER BY c.id;
 

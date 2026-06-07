@@ -29,8 +29,9 @@ const (
 )
 
 var (
-	ErrNoScoutHouse = errors.New("construa a Toca dos Batedores")
-	ErrNoScouts     = errors.New("nenhum batedor disponível")
+	ErrNoScoutHouse    = errors.New("construa a Toca dos Batedores")
+	ErrNoScouts        = errors.New("nenhum batedor disponível")
+	ErrCannotScoutAlly = errors.New("não dá para espionar um aliado")
 )
 
 type scoutQueuePayload struct {
@@ -192,6 +193,12 @@ func (s *Service) SendScout(ctx context.Context, attackerCityID, targetCityID st
 	if err != nil {
 		return ScoutMission{}, ErrTargetCityNotFound
 	}
+	// Aliados não se espionam (fatia B das alianças).
+	if ally, err := sameAlliance(ctx, q, attacker.PlayerID, target.PlayerID); err != nil {
+		return ScoutMission{}, err
+	} else if ally {
+		return ScoutMission{}, ErrCannotScoutAlly
+	}
 	if err := q.AddCityScouts(ctx, db.AddCityScoutsParams{ID: aid, Scouts: -1}); err != nil { // batedor sai
 		return ScoutMission{}, err
 	}
@@ -213,6 +220,10 @@ func (s *Service) SendScout(ctx context.Context, attackerCityID, targetCityID st
 		return ScoutMission{}, err
 	}
 	irJSON, _ := json.Marshal(incomingReport{AttackerName: atkPlayer.Username, ArriveAt: arriveAt})
+	aaJSON, _ := json.Marshal(allyAlert{AllyName: target.Name, CoordX: int(target.CoordX), CoordY: int(target.CoordY), Kind: "scout"})
+	if err := notifyAlliance(ctx, q, target.WorldID, target.PlayerID, reportTypeAllyAlert, aaJSON); err != nil {
+		return ScoutMission{}, err
+	}
 	if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: target.WorldID, PlayerID: target.PlayerID, Type: reportTypeIncomingScout, Payload: irJSON}); err != nil {
 		return ScoutMission{}, err
 	}

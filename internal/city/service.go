@@ -237,12 +237,14 @@ func (s *Service) OwnerAccountID(ctx context.Context, cityID string) (string, er
 
 // WorldCity é uma cidade visível no mapa-mundo COMPARTILHADO (posição + dono).
 type WorldCity struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Region   string `json:"region"`
-	CoordX   int    `json:"coord_x"`
-	CoordY   int    `json:"coord_y"`
-	Username string `json:"username"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Region      string `json:"region"`
+	CoordX      int    `json:"coord_x"`
+	CoordY      int    `json:"coord_y"`
+	Username    string `json:"username"`
+	AllianceID  string `json:"alliance_id"`  // "" se o dono não está em aliança
+	AllianceTag string `json:"alliance_tag"` // tag da aliança do dono (p/ marcar aliados no mapa)
 }
 
 // WorldCities lista todas as cidades do mundo padrão (compartilhado) — o mapa mostra os vizinhos.
@@ -257,9 +259,14 @@ func (s *Service) WorldCities(ctx context.Context) ([]WorldCity, error) {
 	}
 	out := make([]WorldCity, 0, len(rows))
 	for _, r := range rows {
+		tag := ""
+		if r.AllianceTag != nil {
+			tag = *r.AllianceTag
+		}
 		out = append(out, WorldCity{
 			ID: db.UUIDString(r.ID), Name: r.Name, Region: r.Region,
 			CoordX: int(r.CoordX), CoordY: int(r.CoordY), Username: r.Username,
+			AllianceID: db.UUIDString(r.AllianceID), AllianceTag: tag,
 		})
 	}
 	return out, nil

@@ -508,3 +508,85 @@ func allianceUniqueErr(err error) error {
 	}
 	return err
 }
+
+// sameAlliance: true se os dois jogadores estão na MESMA aliança (ambos com membership e mesmo id).
+func sameAlliance(ctx context.Context, q *db.Queries, p1, p2 pgtype.UUID) (bool, error) {
+	m1, err := q.GetMembershipByPlayer(ctx, p1)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	m2, err := q.GetMembershipByPlayer(ctx, p2)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return sameUUID(m1.AllianceID, m2.AllianceID), nil
+}
+
+// notifyAlliance insere um relatório (payload) para todos os OUTROS membros da aliança do jogador
+// `victim` (se ele tiver aliança). Usado p/ avisar a aliança quando um membro é atacado/espionado.
+func notifyAlliance(ctx context.Context, q *db.Queries, worldID, victim pgtype.UUID, reportType string, payload []byte) error {
+	m, err := q.GetMembershipByPlayer(ctx, victim)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // vítima sem aliança → ninguém a avisar
+	} else if err != nil {
+		return err
+	}
+	members, err := q.ListAllianceMembers(ctx, m.AllianceID)
+	if err != nil {
+		return err
+	}
+	for _, mem := range members {
+		if sameUUID(mem.PlayerID, victim) {
+			continue // a própria vítima já recebe o alerta direto
+		}
+		if _, err := q.InsertReport(ctx, db.InsertReportParams{WorldID: worldID, PlayerID: mem.PlayerID, Type: reportType, Payload: payload}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TransferOwnership: o DONO passa a propriedade da aliança para outro MEMBRO; o antigo dono vira líder.
+func (s *Service) TransferOwnership(ctx context.Context, accountID, targetPlayerID string) error {
+	targetUUID, err := db.ParseUUID(targetPlayerID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	caller, err := s.membershipForAccount(ctx, q, accountID)
+	if err != nil {
+		return err
+	}
+	if caller.Role != "owner" {
+		return ErrAllianceForbidden
+	}
+	if sameUUID(caller.PlayerID, targetUUID) {
+		return ErrAllianceForbidden // já é o dono
+	}
+	target, err := q.GetAllianceMemberForUpdate(ctx, db.GetAllianceMemberForUpdateParams{AllianceID: caller.AllianceID, PlayerID: targetUUID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAllianceForbidden // alvo não é membro desta aliança
+	} else if err != nil {
+		return err
+	}
+	if err := q.UpdateAllianceOwner(ctx, db.UpdateAllianceOwnerParams{ID: caller.AllianceID, OwnerPlayerID: target.PlayerID}); err != nil {
+		return err
+	}
+	if err := q.UpdateMemberRole(ctx, db.UpdateMemberRoleParams{AllianceID: caller.AllianceID, PlayerID: target.PlayerID, Role: "owner"}); err != nil {
+		return err
+	}
+	if err := q.UpdateMemberRole(ctx, db.UpdateMemberRoleParams{AllianceID: caller.AllianceID, PlayerID: caller.PlayerID, Role: "leader"}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

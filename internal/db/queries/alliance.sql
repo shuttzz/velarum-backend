@@ -19,6 +19,9 @@ ORDER BY members DESC, a.created_at;
 -- name: UpdateAllianceEntryMode :exec
 UPDATE alliances SET entry_mode = $2 WHERE id = $1;
 
+-- name: UpdateAllianceOwner :exec
+UPDATE alliances SET owner_player_id = $2 WHERE id = $1;
+
 -- name: DeleteAlliance :exec
 DELETE FROM alliances WHERE id = $1;
 

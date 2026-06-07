@@ -300,19 +300,25 @@ func (q *Queries) ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]
 }
 
 const listWorldCities = `-- name: ListWorldCities :many
-SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username
-FROM cities c JOIN players p ON p.id = c.player_id
+SELECT c.id, c.name, c.region, c.coord_x, c.coord_y, p.username,
+       a.id AS alliance_id, a.tag AS alliance_tag
+FROM cities c
+JOIN players p ON p.id = c.player_id
+LEFT JOIN alliance_members am ON am.player_id = p.id
+LEFT JOIN alliances a ON a.id = am.alliance_id
 WHERE c.world_id = $1
 ORDER BY c.id
 `
 
 type ListWorldCitiesRow struct {
-	ID       pgtype.UUID `json:"id"`
-	Name     string      `json:"name"`
-	Region   string      `json:"region"`
-	CoordX   int32       `json:"coord_x"`
-	CoordY   int32       `json:"coord_y"`
-	Username string      `json:"username"`
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Region      string      `json:"region"`
+	CoordX      int32       `json:"coord_x"`
+	CoordY      int32       `json:"coord_y"`
+	Username    string      `json:"username"`
+	AllianceID  pgtype.UUID `json:"alliance_id"`
+	AllianceTag *string     `json:"alliance_tag"`
 }
 
 func (q *Queries) ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]ListWorldCitiesRow, error) {
@@ -331,6 +337,8 @@ func (q *Queries) ListWorldCities(ctx context.Context, worldID pgtype.UUID) ([]L
 			&i.CoordX,
 			&i.CoordY,
 			&i.Username,
+			&i.AllianceID,
+			&i.AllianceTag,
 		); err != nil {
 			return nil, err
 		}

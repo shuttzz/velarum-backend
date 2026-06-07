@@ -136,6 +136,7 @@ type Querier interface {
 	SpendAccountPremium(ctx context.Context, arg SpendAccountPremiumParams) (int64, error)
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
 	UpdateAllianceEntryMode(ctx context.Context, arg UpdateAllianceEntryModeParams) error
+	UpdateAllianceOwner(ctx context.Context, arg UpdateAllianceOwnerParams) error
 	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 	UpdateCityStorageCaps(ctx context.Context, arg UpdateCityStorageCapsParams) error

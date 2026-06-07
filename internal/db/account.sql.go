@@ -14,7 +14,7 @@ import (
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (username, email, password_hash)
 VALUES ($1, $2, $3)
-RETURNING id, username, email, password_hash, last_login_at, created_at
+RETURNING id, username, email, password_hash, last_login_at, created_at, premium
 `
 
 type CreateAccountParams struct {
@@ -33,12 +33,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.PasswordHash,
 		&i.LastLoginAt,
 		&i.CreatedAt,
+		&i.Premium,
 	)
 	return i, err
 }
 
 const getAccountByEmail = `-- name: GetAccountByEmail :one
-SELECT id, username, email, password_hash, last_login_at, created_at FROM accounts WHERE lower(email) = lower($1)
+SELECT id, username, email, password_hash, last_login_at, created_at, premium FROM accounts WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetAccountByEmail(ctx context.Context, lower string) (Account, error) {
@@ -51,12 +52,13 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, lower string) (Account,
 		&i.PasswordHash,
 		&i.LastLoginAt,
 		&i.CreatedAt,
+		&i.Premium,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, username, email, password_hash, last_login_at, created_at FROM accounts WHERE id = $1
+SELECT id, username, email, password_hash, last_login_at, created_at, premium FROM accounts WHERE id = $1
 `
 
 func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error) {
@@ -69,8 +71,27 @@ func (q *Queries) GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, 
 		&i.PasswordHash,
 		&i.LastLoginAt,
 		&i.CreatedAt,
+		&i.Premium,
 	)
 	return i, err
+}
+
+const spendAccountPremium = `-- name: SpendAccountPremium :execrows
+UPDATE accounts SET premium = premium - $2 WHERE id = $1 AND premium >= $2
+`
+
+type SpendAccountPremiumParams struct {
+	ID      pgtype.UUID `json:"id"`
+	Premium int32       `json:"premium"`
+}
+
+// Gasta moeda premium de forma ATÔMICA: só debita se houver saldo (rows afetadas = 0 → sem saldo).
+func (q *Queries) SpendAccountPremium(ctx context.Context, arg SpendAccountPremiumParams) (int64, error) {
+	result, err := q.db.Exec(ctx, spendAccountPremium, arg.ID, arg.Premium)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const touchAccountLogin = `-- name: TouchAccountLogin :exec

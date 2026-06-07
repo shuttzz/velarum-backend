@@ -140,6 +140,128 @@ func main() {
 		writeJSON(w, http.StatusOK, targets)
 	}))
 
+	// === ALIANÇAS (SW3) — escopo por JOGADOR (basta estar logado) ===
+	mux.HandleFunc("GET /alliances", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		list, err := citySvc.ListAlliances(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	}))
+	mux.HandleFunc("GET /alliances/mine", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		mine, err := citySvc.MyAlliance(r.Context(), acc)
+		if err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, mine)
+	}))
+	mux.HandleFunc("POST /alliances", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			Name string `json:"name"`
+			Tag  string `json:"tag"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		mine, err := citySvc.CreateAlliance(r.Context(), acc, body.Name, body.Tag, time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, mine)
+	}))
+	mux.HandleFunc("POST /alliances/{id}/join", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		res, err := citySvc.JoinOrRequest(r.Context(), acc, r.PathValue("id"), time.Now().UTC())
+		if err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"result": res})
+	}))
+	mux.HandleFunc("POST /alliances/requests/{rid}/decide", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			Approve bool `json:"approve"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		if err := citySvc.ApproveRequest(r.Context(), acc, r.PathValue("rid"), body.Approve, time.Now().UTC()); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /alliances/leave", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		if err := citySvc.Leave(r.Context(), acc); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /alliances/kick", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			PlayerID string `json:"player_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		if err := citySvc.Kick(r.Context(), acc, body.PlayerID); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /alliances/entry-mode", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		if err := citySvc.SetEntryMode(r.Context(), acc, body.Mode); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /alliances/role", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		var body struct {
+			PlayerID string `json:"player_id"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeCode(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		if err := citySvc.SetMemberRole(r.Context(), acc, body.PlayerID, body.Role); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /alliances/disband", authSvc.Require(func(w http.ResponseWriter, r *http.Request) {
+		acc, _ := auth.AccountID(r.Context())
+		if err := citySvc.Disband(r.Context(), acc); err != nil {
+			writeErr(w, statusForAllianceErr(err), err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	mux.HandleFunc("POST /auth/register", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Username string `json:"username"`
@@ -525,6 +647,22 @@ func statusForMarchErr(err error) int {
 	}
 }
 
+func statusForAllianceErr(err error) int {
+	switch {
+	case errors.Is(err, city.ErrBadAllianceName):
+		return http.StatusBadRequest
+	case errors.Is(err, city.ErrAllianceNotFound), errors.Is(err, city.ErrNotInAlliance),
+		errors.Is(err, city.ErrNoJoinRequest), errors.Is(err, city.ErrNoPlayerYet):
+		return http.StatusNotFound
+	case errors.Is(err, city.ErrAlreadyInAlliance), errors.Is(err, city.ErrAllianceNameTaken),
+		errors.Is(err, city.ErrAllianceTagTaken), errors.Is(err, city.ErrInsufficientPremium),
+		errors.Is(err, city.ErrAllianceFull), errors.Is(err, city.ErrAllianceForbidden):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func statusForScoutErr(err error) int {
 	switch {
 	case errors.Is(err, city.ErrBadCount), errors.Is(err, city.ErrCannotRaidSelf):
@@ -693,6 +831,28 @@ func codeFor(err error) string {
 		return "no_scout_house"
 	case errors.Is(err, city.ErrNoScouts):
 		return "no_scouts"
+	case errors.Is(err, city.ErrNoPlayerYet):
+		return "no_player_yet"
+	case errors.Is(err, city.ErrAllianceNotFound):
+		return "alliance_not_found"
+	case errors.Is(err, city.ErrAlreadyInAlliance):
+		return "already_in_alliance"
+	case errors.Is(err, city.ErrNotInAlliance):
+		return "not_in_alliance"
+	case errors.Is(err, city.ErrAllianceNameTaken):
+		return "alliance_name_taken"
+	case errors.Is(err, city.ErrAllianceTagTaken):
+		return "alliance_tag_taken"
+	case errors.Is(err, city.ErrBadAllianceName):
+		return "bad_alliance_name"
+	case errors.Is(err, city.ErrInsufficientPremium):
+		return "insufficient_premium"
+	case errors.Is(err, city.ErrAllianceFull):
+		return "alliance_full"
+	case errors.Is(err, city.ErrAllianceForbidden):
+		return "alliance_forbidden"
+	case errors.Is(err, city.ErrNoJoinRequest):
+		return "no_join_request"
 	default:
 		return "internal"
 	}

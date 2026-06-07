@@ -17,6 +17,32 @@ type Account struct {
 	PasswordHash string             `json:"password_hash"`
 	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
 	CreatedAt    time.Time          `json:"created_at"`
+	Premium      int32              `json:"premium"`
+}
+
+type Alliance struct {
+	ID            pgtype.UUID `json:"id"`
+	WorldID       pgtype.UUID `json:"world_id"`
+	Name          string      `json:"name"`
+	Tag           string      `json:"tag"`
+	OwnerPlayerID pgtype.UUID `json:"owner_player_id"`
+	EntryMode     string      `json:"entry_mode"`
+	MemberCap     int32       `json:"member_cap"`
+	CreatedAt     time.Time   `json:"created_at"`
+}
+
+type AllianceJoinRequest struct {
+	ID         pgtype.UUID `json:"id"`
+	AllianceID pgtype.UUID `json:"alliance_id"`
+	PlayerID   pgtype.UUID `json:"player_id"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
+type AllianceMember struct {
+	AllianceID pgtype.UUID `json:"alliance_id"`
+	PlayerID   pgtype.UUID `json:"player_id"`
+	Role       string      `json:"role"`
+	JoinedAt   time.Time   `json:"joined_at"`
 }
 
 type Battle struct {

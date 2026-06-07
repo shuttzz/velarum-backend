@@ -20,6 +20,7 @@ type Querier interface {
 	CompleteRecruitQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CompleteScoutQueue(ctx context.Context, id pgtype.UUID) (int64, error)
 	CountAliveWorldTargetsByKind(ctx context.Context, arg CountAliveWorldTargetsByKindParams) (int64, error)
+	CountAllianceMembers(ctx context.Context, allianceID pgtype.UUID) (int64, error)
 	CountPlayerProvinces(ctx context.Context, playerID pgtype.UUID) (int64, error)
 	CountWorldTargets(ctx context.Context, worldID pgtype.UUID) (int64, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
@@ -28,7 +29,11 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateWorld(ctx context.Context, arg CreateWorldParams) (World, error)
 	DeleteAccountSessions(ctx context.Context, accountID pgtype.UUID) error
+	DeleteAlliance(ctx context.Context, id pgtype.UUID) error
+	DeleteAllianceMember(ctx context.Context, arg DeleteAllianceMemberParams) error
 	DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error
+	DeleteJoinRequest(ctx context.Context, id pgtype.UUID) error
+	DeleteJoinRequestsByPlayer(ctx context.Context, playerID pgtype.UUID) error
 	DeleteSession(ctx context.Context, tokenHash string) error
 	// Derruba o escudo de novato (ao fazer o 1º ataque).
 	DropPlayerShield(ctx context.Context, id pgtype.UUID) error
@@ -36,6 +41,9 @@ type Querier interface {
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetActiveBattle(ctx context.Context, cityID pgtype.UUID) (Battle, error)
+	GetAlliance(ctx context.Context, id pgtype.UUID) (Alliance, error)
+	GetAllianceForUpdate(ctx context.Context, id pgtype.UUID) (Alliance, error)
+	GetAllianceMemberForUpdate(ctx context.Context, arg GetAllianceMemberForUpdateParams) (AllianceMember, error)
 	GetBattle(ctx context.Context, id pgtype.UUID) (Battle, error)
 	GetBattleForUpdate(ctx context.Context, id pgtype.UUID) (Battle, error)
 	GetBuildQueueForUpdate(ctx context.Context, id pgtype.UUID) (BuildQueue, error)
@@ -44,7 +52,9 @@ type Querier interface {
 	GetCityBuildingForUpdate(ctx context.Context, id pgtype.UUID) (CityBuilding, error)
 	GetCityByPlayer(ctx context.Context, playerID pgtype.UUID) (City, error)
 	GetCityForUpdate(ctx context.Context, id pgtype.UUID) (City, error)
+	GetJoinRequest(ctx context.Context, id pgtype.UUID) (AllianceJoinRequest, error)
 	GetMarchForUpdate(ctx context.Context, id pgtype.UUID) (March, error)
+	GetMembershipByPlayer(ctx context.Context, playerID pgtype.UUID) (AllianceMember, error)
 	GetPlayer(ctx context.Context, id pgtype.UUID) (Player, error)
 	GetPlayerByAccountAndWorld(ctx context.Context, arg GetPlayerByAccountAndWorldParams) (Player, error)
 	GetPlayerForUpdate(ctx context.Context, id pgtype.UUID) (Player, error)
@@ -58,9 +68,12 @@ type Querier interface {
 	GetWorldForUpdate(ctx context.Context, id pgtype.UUID) (World, error)
 	GetWorldMarchForUpdate(ctx context.Context, id pgtype.UUID) (WorldMarch, error)
 	GetWorldTargetForUpdate(ctx context.Context, id pgtype.UUID) (WorldTarget, error)
+	InsertAlliance(ctx context.Context, arg InsertAllianceParams) (Alliance, error)
+	InsertAllianceMember(ctx context.Context, arg InsertAllianceMemberParams) error
 	InsertBattle(ctx context.Context, arg InsertBattleParams) (Battle, error)
 	InsertBuildQueue(ctx context.Context, arg InsertBuildQueueParams) (BuildQueue, error)
 	InsertCityBuilding(ctx context.Context, arg InsertCityBuildingParams) (CityBuilding, error)
+	InsertJoinRequest(ctx context.Context, arg InsertJoinRequestParams) error
 	InsertMarch(ctx context.Context, arg InsertMarchParams) (March, error)
 	InsertProvince(ctx context.Context, arg InsertProvinceParams) (Province, error)
 	InsertRaid(ctx context.Context, arg InsertRaidParams) (Raid, error)
@@ -74,6 +87,8 @@ type Querier interface {
 	ListActiveMarches(ctx context.Context, cityID pgtype.UUID) ([]March, error)
 	ListActiveScoutMissions(ctx context.Context, attackerCityID pgtype.UUID) ([]ScoutMission, error)
 	ListActiveWorldMarches(ctx context.Context, cityID pgtype.UUID) ([]WorldMarch, error)
+	ListAllianceMembers(ctx context.Context, allianceID pgtype.UUID) ([]ListAllianceMembersRow, error)
+	ListAlliances(ctx context.Context, worldID pgtype.UUID) ([]ListAlliancesRow, error)
 	// Saques que SAÍRAM desta cidade (ataques em andamento).
 	ListAttackerRaids(ctx context.Context, attackerCityID pgtype.UUID) ([]Raid, error)
 	ListCityBuildings(ctx context.Context, cityID pgtype.UUID) ([]CityBuilding, error)
@@ -82,6 +97,7 @@ type Querier interface {
 	ListExpiredCombatTargets(ctx context.Context, arg ListExpiredCombatTargetsParams) ([]pgtype.UUID, error)
 	// Saques VINDO para esta cidade (alerta de incoming — defesa ativa).
 	ListIncomingRaids(ctx context.Context, defenderCityID pgtype.UUID) ([]Raid, error)
+	ListJoinRequests(ctx context.Context, allianceID pgtype.UUID) ([]ListJoinRequestsRow, error)
 	ListPendingBuilds(ctx context.Context, cityID pgtype.UUID) ([]ListPendingBuildsRow, error)
 	ListPendingRecruits(ctx context.Context, cityID pgtype.UUID) ([]ListPendingRecruitsRow, error)
 	ListPendingScouts(ctx context.Context, cityID pgtype.UUID) ([]ListPendingScoutsRow, error)
@@ -116,10 +132,14 @@ type Querier interface {
 	SetWorldMarchReturning(ctx context.Context, arg SetWorldMarchReturningParams) error
 	// Marca o alvo como consumido/morto (combate vencido ou nó zerado sem respawn).
 	SetWorldTargetDepleted(ctx context.Context, id pgtype.UUID) error
+	// Gasta moeda premium de forma ATÔMICA: só debita se houver saldo (rows afetadas = 0 → sem saldo).
+	SpendAccountPremium(ctx context.Context, arg SpendAccountPremiumParams) (int64, error)
 	TouchAccountLogin(ctx context.Context, arg TouchAccountLoginParams) error
+	UpdateAllianceEntryMode(ctx context.Context, arg UpdateAllianceEntryModeParams) error
 	UpdateBattleState(ctx context.Context, arg UpdateBattleStateParams) error
 	UpdateCityResources(ctx context.Context, arg UpdateCityResourcesParams) error
 	UpdateCityStorageCaps(ctx context.Context, arg UpdateCityStorageCapsParams) error
+	UpdateMemberRole(ctx context.Context, arg UpdateMemberRoleParams) error
 }
 
 var _ Querier = (*Queries)(nil)

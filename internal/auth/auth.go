@@ -50,6 +50,7 @@ type Account struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+	Premium  int    `json:"premium"` // moeda premium (saldo da conta)
 }
 
 // Service expõe os casos de uso de autenticação.
@@ -183,7 +184,7 @@ func hashToken(token string) string {
 }
 
 func toAccount(a db.Account) Account {
-	return Account{ID: db.UUIDString(a.ID), Username: a.Username, Email: a.Email}
+	return Account{ID: db.UUIDString(a.ID), Username: a.Username, Email: a.Email, Premium: int(a.Premium)}
 }
 
 func validUsername(u string) bool {
